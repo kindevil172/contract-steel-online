@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: contract-steel-online
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /health
