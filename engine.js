@@ -91,6 +91,7 @@ const CARDS            = [
   { id: "brute", name: "Orc Brute", cost: 2, kind: "unit", atk: 2, hp: 2, fac: "horde", text: "Feast: +1/+1 whenever another friendly sellsword falls.", flavor: "Gets hungrier the worse it goes." },
   { id: "warchief", name: "Goblin War Chief", cost: 4, kind: "unit", atk: 2, hp: 3, fac: "horde", text: "Hire: summon a 1/1 Goblin Grunt, then your Grunts get +1/+1.", flavor: "Wears a crown. Stole it, too." },
   { id: "ravager", name: "Orc Ravager", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "horde", swift: true, text: "Feast: +1/+1 whenever another friendly sellsword falls.", flavor: "Paints himself in the fallen." },
+  { id: "jace", name: "Jace the Stalwart", cost: 5, kind: "unit", atk: 3, hp: 8, fac: "iron", guard: true, text: "Rage: heal 2 after each fight he survives.", flavor: "Blond as wheat, broad as a gate, and twice as hard to move." },
 ];
 const CARD                          = {};
 for (const c of CARDS) CARD[c.id] = c;
@@ -107,7 +108,7 @@ const RARITY                         = {
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
   poisoner: "rare", spymaster: "rare", priest: "rare", golem: "rare", shaman: "rare", gorger: "rare", troll: "rare", bloodfeast: "rare",
-  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic",
+  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic",
   warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
 };
 for (const c of CARDS) c.rarity = RARITY[c.id] || (c.legend ? "legendary" : "common");
@@ -128,6 +129,7 @@ function draw(g   , s      , n = 1) {
     if (p.hand.length >= HAND_MAX) { push(g, `${p.name} discarded ${CARD[c].name} (hand full)`); if (p.recycle && p.grave) p.grave.push(c); } else p.hand.push(c);
   }
 }
+const RAGE_HEAL                         = { jace: 2 }; // Rage variant: heals instead of +1 attack
 const RAGE = ["berserker", "ogre", "skirmisher", "reaver", "juggernaut"], FEAST = ["bloodtusk", "brute", "ravager"];
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
@@ -291,13 +293,14 @@ function apply(g0   , a        )    {
       if (dc.drain) heal(e, toU);
       if (RAGE.includes(u.id) && u.hp > 0) u.atk++;
       if (RAGE.includes(d.id) && d.hp > 0) d.atk++;
+      for (const x of [u, d]) if (RAGE_HEAL[x.id] && x.hp > 0) x.hp = Math.min(x.maxHp, x.hp + RAGE_HEAL[x.id]);
       push(g, `${uc.name} fought ${dc.name}`);
     }
     cleanup(g); return g;
   }
   return g0;
 }
-const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (CARD[u.id].deadly ? 3 : 0) + (CARD[u.id].legend ? 2 : 0);
+const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (RAGE_HEAL[u.id] ? 2 : 0) + (CARD[u.id].deadly ? 3 : 0) + (CARD[u.id].legend ? 2 : 0);
 function aiAction(g   )         {
   const s = g.turn, o = other(s), p = g[s], e = g[o];
   const ready = p.board.filter((u) => u.ready);
@@ -385,4 +388,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE, heal, summon, checkWin, startTurn, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, heal, summon, checkWin, startTurn, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
