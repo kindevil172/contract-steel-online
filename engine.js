@@ -6,9 +6,9 @@
                                                                                                                                                                                                                                                                                                                                    
                                                                                                                                     
                                                                                                                                                                                                  
-                                                                                                                 
+                                                                                                                                                                                                                            
                                                    
-                                                                                                                        
+                                                                                                                                                                   
 
 const MAX_GOLD = 8, HAND_MAX = 8, BOARD_MAX = 6, DECK_SIZE = 20;
 const CARDS            = [
@@ -141,13 +141,36 @@ function startTurn(g   , s      ) {
   draw(g, s);
   checkWin(g);
 }
+const OPEN_HAND = 4;
+// Mulligan: put the chosen opening cards back, shuffle, draw that many. Once per captain; play starts when both are done.
+function mulligan(g0   , side      , idx          )    {
+  if (g0.phase !== "mull" || !g0.mull || g0.mull[side] >= 0) return g0;
+  const p0 = g0[side];
+  if (!Array.isArray(idx) || idx.length > p0.hand.length || new Set(idx).size !== idx.length || !idx.every((i) => Number.isInteger(i) && i >= 0 && i < p0.hand.length)) return g0;
+  const g = clone(g0); const p = g[side];
+  const back = idx.map((i) => p.hand[i]);
+  p.hand = p.hand.filter((_, i) => !idx.includes(i));
+  p.deck = shuffle(p.deck.concat(back));
+  draw(g, side, back.length);
+  g.mull [side] = back.length;
+  push(g, back.length ? `${p.name} swapped ${back.length} card${back.length === 1 ? "" : "s"}` : `${p.name} kept their hand`);
+  if (g.mull .a >= 0 && g.mull .b >= 0) {
+    g.phase = "play";
+    g.b.hand.push("bonus");
+    push(g, `${g.a.name} goes first. ${g.b.name} gets a Signing Bonus.`);
+    startTurn(g, "a");
+  }
+  return g;
+}
+// Simple mulligan rule for the computer: send back anything costing 5 or more.
+const aiMulligan = (g   , side      )           => g[side].hand.map((id, i) => (CARD[id].cost >= 5 ? i : -1)).filter((i) => i >= 0);
                                                                                                                                                  
 function newGame(A         , B         )    {
   const mk = (c         )         => ({ name: c.name, hp: c.hp, maxHp: c.maxHp ?? c.hp, gold: 0, maxGold: c.ramp ?? 0, deck: shuffle(c.deck), hand: [], board: [], fatigue: 0, recycle: !!c.recycle, grave: [] });
-  const g    = { a: mk(A), b: mk(B), turn: "a", round: 1, log: [], winner: null, uid: 1 };
-  draw(g, "a", A.hand ?? 3); draw(g, "b", B.hand ?? 5); if (B.bonus !== false) g.b.hand.push("bonus");
-  push(g, `The contract is signed. ${A.name} goes first.`);
-  startTurn(g, "a");
+  const g    = { a: mk(A), b: mk(B), turn: "a", round: 1, log: [], winner: null, uid: 1, phase: "mull", mull: { a: -1, b: -1 }, plays: [] };
+  // Both captains open with 4 cards and may mulligan once; the second player gets the Signing Bonus when play starts.
+  draw(g, "a", OPEN_HAND); draw(g, "b", OPEN_HAND);
+  push(g, `The contract is signed. ${A.name} goes first. Each captain may swap cards from their opening hand.`);
   return g;
 }
 const clone = (g   )    => JSON.parse(JSON.stringify(g));
@@ -212,6 +235,8 @@ function canPlay(g   , s      , idx        )          {
 }
 function apply(g0   , a        )    {
   if (g0.winner) return g0;
+  if (g0.phase === "mull") return a.t === "mull" ? mulligan(g0, a.side, a.idx) : g0;
+  if (a.t === "mull") return g0;
   const g = clone(g0);
   const s = g.turn, p = g[s], e = g[other(s)];
   if (a.t === "end") {
@@ -227,6 +252,7 @@ function apply(g0   , a        )    {
     p.hand.splice(a.idx, 1); p.gold -= c.cost;
     if (p.recycle && p.grave && c.kind === "spell" && !c.token) p.grave.push(c.id);
     push(g, `${p.name} ${c.kind === "unit" ? "hired" : "played"} ${c.name}`);
+    g.plays = (g.plays || []).concat([{ side: s, id: c.id, n: g.uid++ }]).slice(-6);
     if (c.kind === "unit") {
       const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden };
       const others = p.board.slice();
@@ -302,6 +328,7 @@ function apply(g0   , a        )    {
 }
 const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (RAGE_HEAL[u.id] ? 2 : 0) + (CARD[u.id].deadly ? 3 : 0) + (CARD[u.id].legend ? 2 : 0);
 function aiAction(g   )         {
+  if (g.phase === "mull" && g.mull) { const ms       = g.mull.a < 0 ? "a" : "b"; return { t: "mull", side: ms, idx: aiMulligan(g, ms) }; }
   const s = g.turn, o = other(s), p = g[s], e = g[o];
   const ready = p.board.filter((u) => u.ready);
   const vis = e.board.filter((u) => !u.hidden);
@@ -388,4 +415,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, heal, summon, checkWin, startTurn, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };

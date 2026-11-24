@@ -192,6 +192,18 @@ wss.on("connection", (ws) => {
     if (m.t === "act") {
       if (!room.g) { send(ws, { t: "error", msg: "Waiting for an opponent." }); return; }
       if (room.g.winner) { send(ws, { t: "error", msg: "The match is over." }); return; }
+      if (room.g.phase === "mull") {
+        // Opening-hand swap: both players choose privately and at the same time. Only the count is shared.
+        const a = m.action;
+        const idx = a && a.t === "mull" && Array.isArray(a.idx) && a.idx.length <= 4 && a.idx.every((i) => Number.isInteger(i)) ? a.idx : null;
+        if (!idx) { send(ws, { t: "error", msg: "Choose which opening cards to swap first." }); broadcast(room); return; }
+        let next;
+        try { next = apply(room.g, { t: "mull", side: p.side, idx }); } catch (e) { console.error("mull failed", e); next = room.g; }
+        if (next === room.g) { send(ws, { t: "error", msg: "You already locked in your hand." }); broadcast(room); return; }
+        room.g = next; room.seq++; room.last = { action: { t: "mull", side: p.side, n: idx.length }, actor: p.side };
+        broadcast(room);
+        return;
+      }
       if (room.g.turn !== p.side) { send(ws, { t: "error", msg: "It's not your turn." }); broadcast(room); return; }
       const a = m.action;
       const ok = a && ((a.t === "end") || (a.t === "play" && Number.isInteger(a.idx)) || (a.t === "attack" && Number.isInteger(a.uid) && a.target));
