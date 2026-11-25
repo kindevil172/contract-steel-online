@@ -449,7 +449,7 @@ wss.on("connection", (ws) => {
       const a = m.action;
       const ok = a && ((a.t === "end") || (a.t === "play" && Number.isInteger(a.idx)) || (a.t === "attack" && Number.isInteger(a.uid) && a.target) || (a.t === "trib" && Number.isInteger(a.uid)));
       if (!ok) { send(ws, { t: "error", msg: "Invalid move." }); return; }
-      const clean = a.t === "end" ? { t: "end" } : a.t === "trib" ? { t: "trib", uid: a.uid, pay: !!a.pay } : a.t === "play" ? { t: "play", idx: a.idx, ...(a.target ? { target: { side: a.target.side === "b" ? "b" : "a", uid: a.target.uid === "hero" ? "hero" : Number(a.target.uid) } } : {}) } : { t: "attack", uid: a.uid, target: { side: a.target.side === "b" ? "b" : "a", uid: a.target.uid === "hero" ? "hero" : Number(a.target.uid) } };
+      const clean = a.t === "end" ? { t: "end" } : a.t === "trib" ? { t: "trib", uid: a.uid, pay: !!a.pay } : a.t === "play" ? { t: "play", idx: a.idx, ...(a.alt ? { alt: true } : {}), ...(a.target ? { target: { side: a.target.side === "b" ? "b" : "a", uid: a.target.uid === "hero" ? "hero" : Number(a.target.uid) } } : {}) } : { t: "attack", uid: a.uid, target: { side: a.target.side === "b" ? "b" : "a", uid: a.target.uid === "hero" ? "hero" : Number(a.target.uid) } };
       let next;
       try { next = apply(room.g, clean); } catch (e) { console.error("apply failed", e); next = room.g; }
       if (next === room.g) { send(ws, { t: "error", msg: "That move isn't allowed right now." }); broadcast(room); return; }

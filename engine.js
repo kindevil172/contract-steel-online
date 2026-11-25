@@ -2,14 +2,14 @@
                       
                                                                         
                                                                 
-                                                     
+                                                              
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                   
                                                                                                                                                                                                                  
                                                                                                                                                                                                                                                                                                                             
                                                    
-                                                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                                          
 
 const MAX_GOLD = 8, HAND_MAX = 8, BOARD_MAX = 6, DECK_SIZE = 20;
 const CARDS            = [
@@ -99,6 +99,10 @@ const CARDS            = [
   { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 4, fac: "gilded", text: "Hire: heal your captain and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
   { id: "bogleech", name: "Bog Leech", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: heal your captain 1 and gain +1 attack.", flavor: "It takes a little. It gives a little back." },
   { id: "rotmaw", name: "Rotmaw, the Hungry Wyrm", cost: 5, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "eat", n: 1 }, text: "Each turn it eats a random ally and gains its attack and health. Fed: 2 damage to a random enemy.", flavor: "Rot never fills it. Nothing ever has." },
+  { id: "ambusher", name: "Alley Ambusher", cost: 3, kind: "unit", atk: 3, hp: 3, fac: "shadow", hidden: true, isNew: true, text: "When it leaves Hidden by attacking a sellsword, Stun that sellsword.", flavor: "You never see the first blow. You feel it for a day." },
+  { id: "bodyguard", name: "Hired Bodyguard", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "gilded", guard: true, isNew: true, text: "You may hire it for 4 gold instead: it enters as 2/5.", flavor: "Paid by the hour. Paid more by the scar." },
+  { id: "sentry", name: "Fortress Sentry", cost: 4, kind: "unit", atk: 2, hp: 6, fac: "iron", guard: true, isNew: true, text: "Can't be Stunned.", flavor: "The wall moves before he does." },
+  { id: "bloodblade", name: "Blood Blade", cost: 1, kind: "spell", fac: "crimson", target: "unit", isNew: true, text: "Deal 2 damage to any sellsword. If it survives, it gains +2 attack.", flavor: "It drinks first. Then it shares." },
   { id: "hollowqueen", name: "Hollow Queen", cost: 6, kind: "unit", atk: 0, hp: 1, fac: "beast", trib: { k: "gold", n: 2 }, legend: true, isNew: true, text: "Hire: devour the enemy sellsword with the most attack + health (even Hidden). Gain its attack and health.", flavor: "She is never full. She is only ever hollow." },
   { id: "slime", name: "Slime", cost: 0, kind: "unit", atk: 1, hp: 1, fac: "beast", flavor: "It was a puddle. Then it was hungry." },
   { id: "tunnelcent", name: "Tunnel Centipede", cost: 2, kind: "unit", atk: 3, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: +1 health.", flavor: "Every trench is its burrow." },
@@ -124,7 +128,7 @@ const RARITY                         = {
   infiltrator: "common", knife: "common", moneylender: "common", rabble: "common", kobold: "common", bomber: "common", worg: "common",
   bloodtusk: "common", warcall: "common", bonus: "common", debt: "common", grunt: "common",
   skirmisher: "common", charge: "common", squire: "common", holdline: "common", cutthroat: "common", dart: "common", clerk: "common",
-  taxman: "common", looter: "common", brute: "common",
+  taxman: "common", looter: "common", brute: "common", ambusher: "common", bodyguard: "common", sentry: "common", bloodblade: "common",
   headtaker: "rare", reaver: "rare", ballista: "rare", juggernaut: "rare", stalker: "rare", marked: "rare", paladin: "rare",
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
@@ -255,6 +259,7 @@ function newGame(A         , B         )    {
   return g;
 }
 const clone = (g   )    => JSON.parse(JSON.stringify(g));
+function stunUnit(g   , u      )          { if (u.id === "sentry") { push(g, `${CARD[u.id].name} can't be Stunned`); return false; } u.stun = 1; u.ready = false; return true; }
 function hasGuard(p        ) { return p.board.some((u) => u.guard && !u.hidden && !u.stun); }
 function canAttackTarget(g   , s      , t        )          {
   const e = g[other(s)];
@@ -268,6 +273,7 @@ function spellTargetOk(g   , s      , c         , t                    )        
   if (!c.target || c.target === "none") return true;
   if (!t) return false;
   if (c.target === "friend") return t.side === s && t.uid !== "hero" && g[s].board.some((u) => u.uid === t.uid);
+  if (c.target === "unit") { if (t.uid === "hero") return false; const u = g[t.side].board.find((x) => x.uid === t.uid); return !!u && u.hp > 0 && (t.side === s || !u.hidden); }
   if (t.side !== other(s)) return false;
   if (t.uid === "hero") return c.target === "enemy";
   const u = g[t.side].board.find((x) => x.uid === t.uid);
@@ -307,6 +313,7 @@ function canPlay(g   , s      , idx        )          {
   const p = g[s]; const c = CARD[p.hand[idx]]; if (!c || c.cost > p.gold || c.id === "debt") return false;
   if (c.kind === "unit" && p.board.length >= BOARD_MAX) return false;
   if (c.target === "friend" && p.board.length === 0) return false;
+  if (c.target === "unit" && !p.board.some((u) => u.hp > 0) && !g[other(s)].board.some((u) => u.hp > 0 && !u.hidden)) return false;
   if (c.id === "gorge" && p.board.length < 2) return false;
   if (c.id === "warcall" && p.board.length >= BOARD_MAX) return false;
   if (c.target === "enemyUnit") {
@@ -342,13 +349,16 @@ function apply(g0   , a        )    {
     const c = CARD[p.hand[a.idx]];
     const tg = a.target;
     if (!spellTargetOk(g, s, c, tg)) return g0;
-    p.hand.splice(a.idx, 1); p.gold -= c.cost;
+    const alt = c.id === "bodyguard" && !!a.alt; const cost = alt ? 4 : c.cost;
+    if (p.gold < cost) return g0;
+    p.hand.splice(a.idx, 1); p.gold -= cost;
     if (p.recycle && p.grave && c.kind === "spell" && !c.token) p.grave.push(c.id);
     push(g, `${p.name} ${c.kind === "unit" ? "hired" : "played"} ${c.name}`);
     g.plays = (g.plays || []).concat([{ side: s, id: c.id, n: g.uid++ }]).slice(-6);
     if (c.kind === "unit") {
       const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) };
       const others = p.board.slice();
+      if (alt) { nu.atk = 2; nu.hp = nu.maxHp = 5; push(g, `${p.name} paid 4 gold: Hired Bodyguard enters as 2/5`); }
       p.board.push(nu);
       if (c.id === "medic") heal(p, 3);
       if (c.id === "quartermaster" || c.id === "spymaster") draw(g, s);
@@ -381,10 +391,11 @@ function apply(g0   , a        )    {
       if (c.id === "warcall") summon(g, s, 2);
       if (c.id === "bloodfeast" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; draw(g, s, 2); }
       if (c.id === "ambush" && tg) dmgTarget(g, tg, 2);
+      if (c.id === "bloodblade" && tg) { const u = g[tg.side].board.find((x) => x.uid === tg.uid); if (u) { u.hp -= 2; if (u.hp > 0) { u.atk += 2; push(g, `${CARD[u.id].name} took 2 and gained +2 attack`); } } }
       if (c.id === "bounty" && tg) dmgTarget(g, tg, 4);
       if (c.id === "knife" && tg) dmgTarget(g, tg, 3);
       if (c.id === "dart" && tg) { dmgTarget(g, tg, 1); draw(g, s); }
-      if (c.id === "madcurse" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) { u.trib = { k: "gold", n: 3 }; u.stun = 1; u.ready = false; push(g, `${CARD[u.id].name} is cursed: Tribute 3 gold, and Stunned`); } }
+      if (c.id === "madcurse" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) { u.trib = { k: "gold", n: 3 }; const st = stunUnit(g, u); push(g, `${CARD[u.id].name} is cursed: Tribute 3 gold${st ? ", and Stunned" : ""}`); } }
       if (c.id === "gorge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); const v = u && p.board.filter((x) => x.uid !== u.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (u && v) { u.atk += v.atk; u.hp += Math.max(0, v.hp); u.maxHp += Math.max(0, v.hp); v.hp = 0; push(g, `${CARD[u.id].name} devoured ${CARD[v.id].name}`); } }
       if (c.id === "marked" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; }
       if (c.id === "volley") for (const u of e.board) u.hp -= 2;
@@ -405,7 +416,7 @@ function apply(g0   , a        )    {
   if (a.t === "attack") {
     const u = p.board.find((x) => x.uid === a.uid);
     if (!u || !u.ready || u.stun || !canAttackTarget(g, s, a.target)) return g0;
-    u.ready = false; u.hidden = false;
+    const wasHidden = u.hidden; u.ready = false; u.hidden = false;
     const uc = CARD[u.id];
     if (a.target.uid === "hero") {
       e.hp -= u.atk; if (uc.drain) heal(p, u.atk);
@@ -425,6 +436,7 @@ function apply(g0   , a        )    {
       if (RAGE.includes(d.id) && d.hp > 0) d.atk++;
       for (const x of [u, d]) if (RAGE_HEAL[x.id] && x.hp > 0) x.hp = Math.min(x.maxHp, x.hp + RAGE_HEAL[x.id]);
       push(g, `${uc.name} fought ${dc.name}`);
+      if (u.id === "ambusher" && wasHidden && d.hp > 0 && stunUnit(g, d)) push(g, `${uc.name} Stunned ${dc.name}`);
     }
     cleanup(g); return g;
   }
@@ -463,6 +475,7 @@ function aiAction(g   )         {
       if (c.trib && c.trib.k === "gold" && goldDue(p) + c.trib.n > Math.min(MAX_GOLD, p.maxGold + 1)) continue;
       if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
+      if (c.id === "bodyguard" && p.gold >= 4) { const blocks = p.hand.some((h, j) => j !== idx && CARD[h].cost <= p.gold - 1 && CARD[h].cost > p.gold - 4 && canPlay(g, s, j)); return { t: "play", idx, alt: !blocks }; }
       return { t: "play", idx };
     }
     if (c.id === "healer" && (p.hp <= p.maxHp - 3 || p.hand.length <= 3)) return { t: "play", idx };
@@ -480,6 +493,13 @@ function aiAction(g   )         {
     if (c.id === "gorge" && p.board.length >= 2) { const best = p.board.slice().sort((x, y) => value(y) - value(x))[0]; const v = p.board.filter((x) => x.uid !== best.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (v && (value(v) <= 3 || v.id === "grunt" || v.id === "slime")) return { t: "play", idx, target: { side: s, uid: best.uid } }; }
     if (c.id === "marked") { const t = vis.slice().sort((x, y) => value(y) - value(x))[0]; if (t && value(t) >= 6) return { t: "play", idx, target: { side: o, uid: t.uid } }; }
     if (c.id === "dart") { const k = vis.filter((u) => u.hp <= 1).sort((x, y) => value(y) - value(x))[0] || (p.hand.length <= 3 ? vis.slice().sort((x, y) => x.hp - y.hp)[0] : undefined); if (k) return { t: "play", idx, target: { side: o, uid: k.uid } }; }
+    if (c.id === "bloodblade") {
+      const kill = vis.filter((u) => u.hp > 0 && u.hp <= 2).sort((x, y) => value(y) - value(x))[0];
+      if (kill && value(kill) >= 3) return { t: "play", idx, target: { side: o, uid: kill.uid } };
+      const buff = p.board.filter((u) => u.hp >= 4 && u.ready && !u.stun).sort((x, y) => y.hp - x.hp || y.atk - x.atk)[0];
+      if (buff) return { t: "play", idx, target: { side: s, uid: buff.uid } };
+      if (kill) return { t: "play", idx, target: { side: o, uid: kill.uid } };
+    }
     if (c.id === "blade") { const best = p.board.slice().sort((x, y) => value(y) - value(x))[0]; return { t: "play", idx, target: { side: s, uid: best.uid } }; }
     if (c.id === "buyout") { const t = vis.filter((u) => u.atk <= 3).sort((x, y) => value(y) - value(x))[0]; if (t && value(t) >= 5) return { t: "play", idx, target: { side: o, uid: t.uid } }; }
     if (c.id === "knife" || c.id === "bloodmoney") {
@@ -543,4 +563,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
