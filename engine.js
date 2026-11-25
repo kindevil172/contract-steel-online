@@ -1,14 +1,15 @@
 // ================= ENGINE =================
                       
-                                                              
+                                                                        
+                                                        
                                                      
                                                        
-                                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                      
-                                                                                                                                                                                                 
+                                                                                                                                                                                                                                                                                                                                                                 
+                                                                                                                                                                                  
+                                                                                                                                                                                                                 
                                                                                                                                                                                                                             
                                                    
-                                                                                                                                                                   
+                                                                                                                                                                                                              
 
 const MAX_GOLD = 8, HAND_MAX = 8, BOARD_MAX = 6, DECK_SIZE = 20;
 const CARDS            = [
@@ -95,6 +96,19 @@ const CARDS            = [
   { id: "attorin", name: "Attorin, Line Breaker", cost: 5, kind: "unit", atk: 9, hp: 1, fac: "horde", text: "Last Pay: summon 3 Goblin Grunts.", flavor: "He breaks the line. The goblins fill the hole." },
   { id: "zack", name: "Zack, Hollow-Hearted", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "shadow", swift: true, text: "Hire: give your strongest other sellsword Deadly.", flavor: "Nothing behind the eyes. Everything on the blade." },
   { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
+  { id: "slime", name: "Slime", cost: 0, kind: "unit", atk: 1, hp: 1, fac: "beast", flavor: "It was a puddle. Then it was hungry." },
+  { id: "tunnelcent", name: "Tunnel Centipede", cost: 2, kind: "unit", atk: 3, hp: 4, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: +1 health.", flavor: "Every trench is its burrow." },
+  { id: "carcass", name: "Carcass Beetle", cost: 4, kind: "unit", atk: 2, hp: 5, fac: "beast", guard: true, trib: { k: "gold", n: 2 }, text: "Fed: +1/+1.", flavor: "Wears last week's casualties as armor." },
+  { id: "boar", name: "Bristleback Boar", cost: 3, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "gold", n: 3 }, flavor: "Feed it, or stand behind something solid." },
+  { id: "scavworg", name: "Scavenger Worg", cost: 2, kind: "unit", atk: 2, hp: 3, fac: "beast", trib: { k: "discard", n: 1 }, text: "Fed: draw a card.", flavor: "Brings back what it doesn't eat." },
+  { id: "bear", name: "Stoneskin Bear", cost: 4, kind: "unit", atk: 5, hp: 6, fac: "beast", trib: { k: "gold", n: 3 }, text: "Fed: +1/+2.", flavor: "Arrows stick. It does not notice." },
+  { id: "mossmen", name: "Moss Men", cost: 1, kind: "unit", atk: 1, hp: 1, fac: "beast", hidden: true, trib: { k: "gold", n: 1 }, text: "Fed: +1/+1.", flavor: "The hill was watching the whole time." },
+  { id: "giantcent", name: "Giant Centipede", cost: 4, kind: "unit", atk: 5, hp: 5, fac: "beast", hidden: true, trib: { k: "hp", n: 2 }, flavor: "It only takes a little blood. From you." },
+  { id: "giantslime", name: "Giant Slime", cost: 3, kind: "unit", atk: 1, hp: 6, fac: "beast", text: "At the end of your turn, heal 1.", flavor: "Cut it in half. Now there's more of it." },
+  { id: "madcurse", name: "Maddening Curse", cost: 3, kind: "spell", fac: "beast", target: "enemyUnit", text: "Give an enemy sellsword Tribute 3 gold and Stun it.", flavor: "Feed the whisper, or it feeds on you." },
+  { id: "gorge", name: "Gorge", cost: 2, kind: "spell", fac: "beast", target: "friend", text: "Your chosen sellsword devours your weakest other sellsword and gains its attack and health.", flavor: "Nothing in the wild goes to waste." },
+  { id: "behemoth", name: "Ironhide Behemoth", cost: 6, kind: "unit", atk: 5, hp: 6, fac: "beast", trib: { k: "gold", n: 4 }, text: "Fed: gain Guard and +2/+2.", flavor: "Every meal adds another plate of hide." },
+  { id: "thousandleg", name: "1000-Legged Giant Centipede", cost: 8, kind: "unit", atk: 10, hp: 10, fac: "beast", guard: true, trib: { k: "gold", n: 4 }, flavor: "Count the legs and you are already dead." },
 ];
 const CARD                          = {};
 for (const c of CARDS) CARD[c.id] = c;
@@ -111,7 +125,9 @@ const RARITY                         = {
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
   poisoner: "rare", spymaster: "rare", priest: "rare", golem: "rare", shaman: "rare", gorger: "rare", troll: "rare", bloodfeast: "rare",
-  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic",
+  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic",
+  slime: "common", tunnelcent: "common", carcass: "common", boar: "common", scavworg: "common", bear: "common", mossmen: "common", giantcent: "common",
+  giantslime: "rare", madcurse: "rare", gorge: "rare",
   warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
 };
 for (const c of CARDS) c.rarity = RARITY[c.id] || (c.legend ? "legendary" : "common");
@@ -135,14 +151,48 @@ function draw(g   , s      , n = 1) {
 const RAGE_HEAL                         = { jace: 2 }; // Rage variant: heals instead of +1 attack
 const RAGE = ["berserker", "ogre", "skirmisher", "reaver", "juggernaut"], FEAST = ["bloodtusk", "brute", "ravager"];
 const isDeadly = (u      ) => !!u.deadly || !!CARD[u.id].deadly;
+// ---------- Beasts: Tribute ----------
+const tribText = (t      ) => t.k === "gold" ? `Tribute ${t.n} gold` : t.k === "discard" ? `Tribute: discard ${t.n}` : `Tribute: lose ${t.n} health`;
+const tribPay = (t      ) => t.k === "gold" ? `Pay ${t.n} gold` : t.k === "discard" ? `Discard ${t.n} card${t.n === 1 ? "" : "s"}` : `Lose ${t.n} health`;
+function canTribute(p        , t      )          { return t.k === "gold" ? p.gold >= t.n : t.k === "discard" ? p.hand.length >= t.n : p.hp > t.n; }
+const FED_VALUE                         = { tunnelcent: 1, carcass: 2, scavworg: 2, bear: 3, mossmen: 2, behemoth: 5 };
+// Unpaid: the beast turns on its own side. It fights your lowest-health other sellsword, or hits your captain if it is alone.
+function rampTarget(p        , u      )                   { return p.board.filter((x) => x.uid !== u.uid && x.hp > 0).sort((x, y) => x.hp - y.hp || value(x) - value(y))[0]; }
+function payTribute(g   , s      , uid        , pay         ) {
+  const p = g[s]; p.due = (p.due || []).filter((x) => x !== uid);
+  const u = p.board.find((x) => x.uid === uid); if (!u || !u.trib || u.hp <= 0) return;
+  const t = u.trib, nm = CARD[u.id].name;
+  if (pay && canTribute(p, t)) {
+    if (t.k === "gold") p.gold -= t.n;
+    else if (t.k === "hp") p.hp -= t.n;
+    else for (let i = 0; i < t.n; i++) { let k = 0; p.hand.forEach((id, j) => { if (CARD[id].cost < CARD[p.hand[k]].cost) k = j; }); const d = p.hand.splice(k, 1)[0]; if (p.recycle && p.grave) p.grave.push(d); push(g, `${p.name} discarded ${CARD[d].name} to feed ${nm}`); }
+    push(g, `${p.name} paid ${nm}'s Tribute (${t.k === "gold" ? `${t.n} gold` : t.k === "hp" ? `${t.n} health` : `${t.n} card`})`);
+    if (u.id === "tunnelcent") { u.hp++; u.maxHp++; }
+    if (u.id === "carcass" || u.id === "mossmen") { u.atk++; u.hp++; u.maxHp++; }
+    if (u.id === "bear") { u.atk++; u.hp += 2; u.maxHp += 2; }
+    if (u.id === "behemoth") { u.guard = true; u.atk += 2; u.hp += 2; u.maxHp += 2; }
+    if (u.id === "scavworg") draw(g, s);
+    return;
+  }
+  u.ready = false; u.hidden = false;
+  const v = rampTarget(p, u);
+  if (v) {
+    const toV = u.atk, toU = v.atk;
+    v.hp -= toV; u.hp -= toU;
+    if (isDeadly(u) && toV > 0) v.hp = Math.min(v.hp, 0);
+    if (isDeadly(v) && toU > 0) u.hp = Math.min(u.hp, 0);
+    push(g, `Unfed, ${nm} turned on ${CARD[v.id].name}`);
+  } else { p.hp -= u.atk; push(g, `Unfed, ${nm} mauled ${p.name} for ${u.atk}`); }
+}
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
 function checkWin(g   ) { if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b"; }
 function startTurn(g   , s      ) {
   g.turn = s; const p = g[s];
   p.maxGold = Math.min(MAX_GOLD, p.maxGold + (p.maxGold === 0 ? 2 : 1)); p.gold = p.maxGold;
-  for (const u of p.board) { u.ready = true; if (u.id === "troll") u.hp = Math.max(u.hp, u.maxHp); }
+  for (const u of p.board) { u.ready = !u.stun; if (u.id === "troll") u.hp = Math.max(u.hp, u.maxHp); }
   draw(g, s);
+  p.due = p.board.filter((u) => !!u.trib).map((u) => u.uid);
   checkWin(g);
 }
 const OPEN_HAND = 4;
@@ -178,14 +228,14 @@ function newGame(A         , B         )    {
   return g;
 }
 const clone = (g   )    => JSON.parse(JSON.stringify(g));
-function hasGuard(p        ) { return p.board.some((u) => u.guard && !u.hidden); }
+function hasGuard(p        ) { return p.board.some((u) => u.guard && !u.hidden && !u.stun); }
 function canAttackTarget(g   , s      , t        )          {
   const e = g[other(s)];
   if (t.side !== other(s)) return false;
   if (t.uid === "hero") return !hasGuard(e);
   const u = e.board.find((x) => x.uid === t.uid);
   if (!u || u.hidden) return false;
-  return !hasGuard(e) || u.guard;
+  return !hasGuard(e) || (u.guard && !u.stun);
 }
 function spellTargetOk(g   , s      , c         , t                    )          {
   if (!c.target || c.target === "none") return true;
@@ -230,6 +280,7 @@ function canPlay(g   , s      , idx        )          {
   const p = g[s]; const c = CARD[p.hand[idx]]; if (!c || c.cost > p.gold || c.id === "debt") return false;
   if (c.kind === "unit" && p.board.length >= BOARD_MAX) return false;
   if (c.target === "friend" && p.board.length === 0) return false;
+  if (c.id === "gorge" && p.board.length < 2) return false;
   if (c.id === "warcall" && p.board.length >= BOARD_MAX) return false;
   if (c.target === "enemyUnit") {
     const e = g[other(s)];
@@ -242,10 +293,18 @@ function apply(g0   , a        )    {
   if (g0.winner) return g0;
   if (g0.phase === "mull") return a.t === "mull" ? mulligan(g0, a.side, a.idx) : g0;
   if (a.t === "mull") return g0;
-  const g = clone(g0);
+  if (a.t === "trib") {
+    const due0 = g0[g0.turn].due || [];
+    if (!due0.includes(a.uid)) return g0;
+    const g = clone(g0); payTribute(g, g.turn, a.uid, !!a.pay); cleanup(g); return g;
+  }
+  let g = clone(g0);
+  // Any other move first settles the Tribute still owed this turn with the sensible default.
+  if ((g[g.turn].due || []).length) { let k = 0; while ((g[g.turn].due || []).length && k++ < 10) { const uid = g[g.turn].due [0]; const u = g[g.turn].board.find((x) => x.uid === uid); payTribute(g, g.turn, uid, !!u && tribWise(g, g.turn, u)); cleanup(g); } if (g.winner) return g; }
   const s = g.turn, p = g[s], e = g[other(s)];
   if (a.t === "end") {
     push(g, `${p.name} ended the turn`);
+    for (const u of p.board) { if (u.stun) u.stun = 0; if (u.id === "giantslime") u.hp = Math.min(u.maxHp, u.hp + 1); }
     if (s === "b") g.round++;
     startTurn(g, other(s)); return g;
   }
@@ -259,7 +318,7 @@ function apply(g0   , a        )    {
     push(g, `${p.name} ${c.kind === "unit" ? "hired" : "played"} ${c.name}`);
     g.plays = (g.plays || []).concat([{ side: s, id: c.id, n: g.uid++ }]).slice(-6);
     if (c.kind === "unit") {
-      const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden };
+      const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) };
       const others = p.board.slice();
       p.board.push(nu);
       if (c.id === "medic") heal(p, 3);
@@ -289,6 +348,8 @@ function apply(g0   , a        )    {
       if (c.id === "bounty" && tg) dmgTarget(g, tg, 4);
       if (c.id === "knife" && tg) dmgTarget(g, tg, 3);
       if (c.id === "dart" && tg) { dmgTarget(g, tg, 1); draw(g, s); }
+      if (c.id === "madcurse" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) { u.trib = { k: "gold", n: 3 }; u.stun = 1; u.ready = false; push(g, `${CARD[u.id].name} is cursed: Tribute 3 gold, and Stunned`); } }
+      if (c.id === "gorge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); const v = u && p.board.filter((x) => x.uid !== u.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (u && v) { u.atk += v.atk; u.hp += Math.max(0, v.hp); u.maxHp += Math.max(0, v.hp); v.hp = 0; push(g, `${CARD[u.id].name} devoured ${CARD[v.id].name}`); } }
       if (c.id === "marked" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; }
       if (c.id === "volley") for (const u of e.board) u.hp -= 2;
       if (c.id === "charge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) { u.atk += 2; u.ready = true; } }
@@ -307,7 +368,7 @@ function apply(g0   , a        )    {
   }
   if (a.t === "attack") {
     const u = p.board.find((x) => x.uid === a.uid);
-    if (!u || !u.ready || !canAttackTarget(g, s, a.target)) return g0;
+    if (!u || !u.ready || u.stun || !canAttackTarget(g, s, a.target)) return g0;
     u.ready = false; u.hidden = false;
     const uc = CARD[u.id];
     if (a.target.uid === "hero") {
@@ -334,10 +395,26 @@ function apply(g0   , a        )    {
   return g0;
 }
 const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (RAGE_HEAL[u.id] ? 2 : 0) + (isDeadly(u) ? 3 : 0) + (CARD[u.id].first ? 1 : 0) + (CARD[u.id].legend ? 2 : 0);
+// Pay a Tribute when it costs less than letting the beast turn on its own side.
+function tribWise(g   , s      , u      )          {
+  const p = g[s], t = u.trib; if (!t || !canTribute(p, t)) return false;
+  const v = rampTarget(p, u);
+  let refuse = 0;
+  if (v) { refuse = (u.atk >= v.hp || isDeadly(u) ? value(v) : Math.min(u.atk, v.hp) * 0.6) + (v.atk >= u.hp || isDeadly(v) ? value(u) : v.atk * 0.4); }
+  else refuse = u.atk * (p.hp <= u.atk + 4 ? 10 : 1.2);
+  let cost = 0;
+  if (t.k === "gold") { const left = p.gold - t.n; const playable = p.hand.some((id) => CARD[id].cost <= p.gold && CARD[id].cost > left && id !== "debt"); cost = t.n * (playable ? 1.1 : 0.4); }
+  else if (t.k === "discard") cost = t.n * 1.5;
+  else cost = t.n * (p.hp <= 8 ? 3 : 1);
+  refuse += u.atk; // an unfed beast also loses its attack this turn
+  return cost - (FED_VALUE[u.id] || 0) <= refuse;
+}
+const goldDue = (p        ) => p.board.reduce((x, u) => x + (u.trib && u.trib.k === "gold" ? u.trib.n : 0), 0);
 function aiAction(g   )         {
   if (g.phase === "mull" && g.mull) { const ms       = g.mull.a < 0 ? "a" : "b"; return { t: "mull", side: ms, idx: aiMulligan(g, ms) }; }
   const s = g.turn, o = other(s), p = g[s], e = g[o];
-  const ready = p.board.filter((u) => u.ready);
+  if (p.due && p.due.length) { const u = p.board.find((x) => x.uid === p.due [0]); return { t: "trib", uid: p.due[0], pay: !!u && tribWise(g, s, u) }; }
+  const ready = p.board.filter((u) => u.ready && !u.stun);
   const vis = e.board.filter((u) => !u.hidden);
   const order = p.hand.map((id, idx) => ({ idx, c: CARD[id] })).sort((x, y) => y.c.cost - x.c.cost);
   for (const { idx, c } of order) {
@@ -345,6 +422,7 @@ function aiAction(g   )         {
     if (c.kind === "unit") {
       if (c.id === "drummer" && p.board.length === 0 && p.hand.length > 2 && p.gold < 4) continue;
       if (c.id === "gorger" && p.board.length === 0) continue;
+      if (c.trib && c.trib.k === "gold" && goldDue(p) + c.trib.n > Math.min(MAX_GOLD, p.maxGold + 1)) continue;
       if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
       return { t: "play", idx };
@@ -360,6 +438,8 @@ function aiAction(g   )         {
     if (c.id === "charge") { const t = p.board.filter((u) => !u.ready).sort((x, y) => y.atk - x.atk)[0]; if (t) return { t: "play", idx, target: { side: s, uid: t.uid } }; }
     if (c.id === "holdline" && e.board.length) { const t = p.board.slice().sort((x, y) => (x.guard ? 1 : 0) - (y.guard ? 1 : 0) || value(y) - value(x))[0]; return { t: "play", idx, target: { side: s, uid: t.uid } }; }
     if (c.id === "volley") { const net = e.board.filter((u) => u.hp <= 2).reduce((x, u) => x + value(u), 0); if (net >= 4 || e.board.length >= 3) return { t: "play", idx }; }
+    if (c.id === "madcurse") { const t = vis.slice().sort((x, y) => (y.guard ? 2 : 0) + value(y) - (x.guard ? 2 : 0) - value(x))[0]; if (t && value(t) >= 6) return { t: "play", idx, target: { side: o, uid: t.uid } }; }
+    if (c.id === "gorge" && p.board.length >= 2) { const best = p.board.slice().sort((x, y) => value(y) - value(x))[0]; const v = p.board.filter((x) => x.uid !== best.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (v && (value(v) <= 3 || v.id === "grunt" || v.id === "slime")) return { t: "play", idx, target: { side: s, uid: best.uid } }; }
     if (c.id === "marked") { const t = vis.slice().sort((x, y) => value(y) - value(x))[0]; if (t && value(t) >= 6) return { t: "play", idx, target: { side: o, uid: t.uid } }; }
     if (c.id === "dart") { const k = vis.filter((u) => u.hp <= 1).sort((x, y) => value(y) - value(x))[0] || (p.hand.length <= 3 ? vis.slice().sort((x, y) => x.hp - y.hp)[0] : undefined); if (k) return { t: "play", idx, target: { side: o, uid: k.uid } }; }
     if (c.id === "blade") { const best = p.board.slice().sort((x, y) => value(y) - value(x))[0]; return { t: "play", idx, target: { side: s, uid: best.uid } }; }
@@ -402,6 +482,7 @@ const PREMADE         = [
   { id: "p-iron", name: "Iron Wall", premade: true, cards: ex({ squire: 2, gatewarden: 2, pikeman: 2, medic: 2, crossbow: 2, sergeant: 2, veteran: 1, shieldwall: 1, ballista: 1, bastion: 1, priest: 1, sapper: 2, dorn: 1 }) },
   { id: "p-shadow", name: "Shadow Knives", premade: true, cards: ex({ cutpurse: 2, infiltrator: 2, ambush: 1, dart: 1, knife: 2, poisoner: 2, assassin: 2, spymaster: 1, bounty: 1, nightblade: 2, widow: 1, veteran: 1, bastion: 1, marked: 1 }) },
   { id: "p-gilded", name: "Gilded Ledger", premade: true, cards: ex({ moneylender: 2, recruit: 2, medic: 2, blade: 2, quartermaster: 2, golem: 1, battlemage: 2, priest: 1, selene: 1, pikeman: 1, taxman: 1, veteran: 1, paladin: 1, sergeant: 1 }) },
+  { id: "p-beast", name: "Wild Beasts", premade: true, cards: ex({ slime: 2, mossmen: 2, tunnelcent: 2, scavworg: 2, giantcent: 2, giantslime: 1, madcurse: 1, thousandleg: 1, rabble: 2, worg: 2, kobold: 2, shaman: 1 }) },
   { id: "p-horde", name: "Grimfang Horde", premade: true, cards: ex({ rabble: 2, kobold: 2, bomber: 2, worg: 2, shaman: 2, bloodtusk: 1, brute: 1, gorger: 1, warcall: 2, troll: 2, warboss: 1, ogre: 1, warchief: 1 }) },
 ];
 const PREMADE_BLURB                         = {
@@ -409,6 +490,7 @@ const PREMADE_BLURB                         = {
   "p-iron": "Iron Company shields and Gilded medics. Outlast, then crush.",
   "p-shadow": "Shadow Guild hidden blades behind a few Iron shields.",
   "p-gilded": "Gilded Ledger card draw and mages, backed by Iron.",
+  "p-beast": "Beasts that demand Tribute every turn, with Grimfang goblins to feed the line. Feed them and they grow.",
   "p-horde": "Monster warband: flood the field with goblins, then bring the trolls and ogres.",
 };
 function copyLimit(id        )         { return CARD[id] && CARD[id].legend ? 1 : 2; }
@@ -423,4 +505,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
