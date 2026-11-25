@@ -7,13 +7,13 @@
                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                   
                                                                                                                                                                                                                  
-                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                                                            
                                                    
-                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                           
 
 const MAX_GOLD = 8, HAND_MAX = 8, BOARD_MAX = 6, DECK_SIZE = 20;
 const CARDS            = [
-  { id: "brawler", name: "Tavern Brawler", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "crimson", flavor: "Paid in ale, fights for free." },
+  { id: "brawler", name: "Tavern Brawler", cost: 1, kind: "unit", atk: 2, hp: 2, fac: "crimson", flavor: "Paid in ale, fights for free." },
   { id: "recruit", name: "Shield Recruit", cost: 1, kind: "unit", atk: 1, hp: 3, fac: "iron", guard: true, flavor: "First contract, first shield." },
   { id: "cutpurse", name: "Cutpurse", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "shadow", swift: true, flavor: "Your coin was never safe." },
   { id: "pikeman", name: "Hired Pikeman", cost: 2, kind: "unit", atk: 3, hp: 3, fac: "iron", flavor: "Ten silver a day, plus spear." },
@@ -96,6 +96,7 @@ const CARDS            = [
   { id: "attorin", name: "Attorin, Line Breaker", cost: 5, kind: "unit", atk: 9, hp: 1, fac: "horde", text: "Last Pay: summon 3 Goblin Grunts.", flavor: "He breaks the line. The goblins fill the hole." },
   { id: "zack", name: "Zack, Hollow-Hearted", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "shadow", swift: true, text: "Hire: give your strongest other sellsword Deadly.", flavor: "Nothing behind the eyes. Everything on the blade." },
   { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
+  { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 2, fac: "gilded", text: "Hire: heal your captain and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
   { id: "slime", name: "Slime", cost: 0, kind: "unit", atk: 1, hp: 1, fac: "beast", flavor: "It was a puddle. Then it was hungry." },
   { id: "tunnelcent", name: "Tunnel Centipede", cost: 2, kind: "unit", atk: 3, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: +1 health.", flavor: "Every trench is its burrow." },
   { id: "carcass", name: "Carcass Beetle", cost: 4, kind: "unit", atk: 2, hp: 5, fac: "beast", guard: true, trib: { k: "gold", n: 2 }, text: "Fed: +1/+1.", flavor: "Wears last week's casualties as armor." },
@@ -125,7 +126,7 @@ const RARITY                         = {
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
   poisoner: "rare", spymaster: "rare", priest: "rare", golem: "rare", shaman: "rare", gorger: "rare", troll: "rare", bloodfeast: "rare",
-  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic",
+  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic", graci: "epic",
   slime: "common", tunnelcent: "common", carcass: "common", boar: "common", scavworg: "common", bear: "common", mossmen: "common", giantcent: "common",
   giantslime: "rare", madcurse: "rare", gorge: "rare",
   warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
@@ -210,10 +211,19 @@ function mulligan(g0   , side      , idx          )    {
   push(g, back.length ? `${p.name} swapped ${back.length} card${back.length === 1 ? "" : "s"}` : `${p.name} kept their hand`);
   if (g.mull .a >= 0 && g.mull .b >= 0) {
     g.phase = "play";
-    g.b.hand.push("bonus");
-    push(g, `${g.a.name} goes first. ${g.b.name} gets a Signing Bonus.`);
-    startTurn(g, "a");
+    const fs       = g.first || "a", ss = other(fs);
+    g[ss].hand.push("bonus");
+    push(g, `${g[fs].name} goes first. ${g[ss].name} gets a Signing Bonus.`);
+    startTurn(g, fs);
   }
+  return g;
+}
+// The roll winner picks: go first (first = true) or second.
+function chooseFirst(g0   , side      , first         )    {
+  if (g0.phase !== "roll" || !g0.roll || g0.roll.winner !== side) return g0;
+  const g = clone(g0);
+  g.first = first ? side : other(side); g.phase = "mull";
+  push(g, `${g[side].name} chooses to go ${first ? "first" : "second"}. Each captain may swap cards from their opening hand.`);
   return g;
 }
 // Simple mulligan rule for the computer: send back anything costing 5 or more.
@@ -221,10 +231,14 @@ const aiMulligan = (g   , side      )           => g[side].hand.map((id, i) => (
                                                                                                                                                  
 function newGame(A         , B         )    {
   const mk = (c         )         => ({ name: c.name, hp: c.hp, maxHp: c.maxHp ?? c.hp, gold: 0, maxGold: c.ramp ?? 0, deck: shuffle(c.deck), hand: [], board: [], fatigue: 0, recycle: !!c.recycle, grave: [] });
-  const g    = { a: mk(A), b: mk(B), turn: "a", round: 1, log: [], winner: null, uid: 1, phase: "mull", mull: { a: -1, b: -1 }, plays: [] };
-  // Both captains open with 4 cards and may mulligan once; the second player gets the Signing Bonus when play starts.
+  // Turn order: each side rolls a die (ties are rerolled); the higher roll chooses to go first or second.
+  const d6 = () => 1 + Math.floor(Math.random() * 6);
+  let ra = d6(), rb = d6(), ties = 0; while (ra === rb && ties < 50) { ties++; ra = d6(); rb = d6(); }
+  const roll = { a: ra, b: rb, ties, winner: (ra > rb ? "a" : "b")        , id: 1 + Math.floor(Math.random() * 1e9) };
+  const g    = { a: mk(A), b: mk(B), turn: "a", round: 1, log: [], winner: null, uid: 1, phase: "roll", roll, mull: { a: -1, b: -1 }, plays: [] };
+  // Both captains open with 4 cards and may mulligan once (after the roll); the second player gets the Signing Bonus when play starts.
   draw(g, "a", OPEN_HAND); draw(g, "b", OPEN_HAND);
-  push(g, `The contract is signed. ${A.name} goes first. Each captain may swap cards from their opening hand.`);
+  push(g, `The contract is signed. ${A.name} rolled ${ra}, ${B.name} rolled ${rb}${ties ? ` (after ${ties} tie${ties === 1 ? "" : "s"})` : ""}. ${g[roll.winner].name} chooses who goes first.`);
   return g;
 }
 const clone = (g   )    => JSON.parse(JSON.stringify(g));
@@ -291,6 +305,8 @@ function canPlay(g   , s      , idx        )          {
 }
 function apply(g0   , a        )    {
   if (g0.winner) return g0;
+  if (g0.phase === "roll") return a.t === "first" ? chooseFirst(g0, a.side, !!a.first) : g0;
+  if (a.t === "first") return g0;
   if (g0.phase === "mull") return a.t === "mull" ? mulligan(g0, a.side, a.idx) : g0;
   if (a.t === "mull") return g0;
   if (a.t === "trib") {
@@ -305,7 +321,7 @@ function apply(g0   , a        )    {
   if (a.t === "end") {
     push(g, `${p.name} ended the turn`);
     for (const u of p.board) { if (u.stun) u.stun = 0; if (u.id === "giantslime") u.hp = Math.min(u.maxHp, u.hp + 1); }
-    if (s === "b") g.round++;
+    if (s !== (g.first || "a")) g.round++;
     startTurn(g, other(s)); return g;
   }
   if (a.t === "play") {
@@ -338,6 +354,7 @@ function apply(g0   , a        )    {
       if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
       if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
       if (c.id === "clerk") p.gold += 1;
+      if (c.id === "graci") { heal(p, 2); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
       if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
@@ -411,6 +428,7 @@ function tribWise(g   , s      , u      )          {
 }
 const goldDue = (p        ) => p.board.reduce((x, u) => x + (u.trib && u.trib.k === "gold" ? u.trib.n : 0), 0);
 function aiAction(g   )         {
+  if (g.phase === "roll" && g.roll) return { t: "first", side: g.roll.winner, first: true }; // going first wins ~70% in sims
   if (g.phase === "mull" && g.mull) { const ms       = g.mull.a < 0 ? "a" : "b"; return { t: "mull", side: ms, idx: aiMulligan(g, ms) }; }
   const s = g.turn, o = other(s), p = g[s], e = g[o];
   if (p.due && p.due.length) { const u = p.board.find((x) => x.uid === p.due [0]); return { t: "trib", uid: p.due[0], pay: !!u && tribWise(g, s, u) }; }
@@ -505,4 +523,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };

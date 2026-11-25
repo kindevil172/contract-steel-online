@@ -121,6 +121,7 @@ function broadcast(room) {
     if (!p.ws) continue;
     send(p.ws, { t: "state", mode: room.mode, rk: Object.fromEntries([...room.rematch].map(([tk, k]) => [room.players.find((q) => q.token === tk)?.side, k])), code: room.code, side: p.side, seq: room.seq, g: redact(room.g, p.side), last: room.last, peer: !!(peer && (peer.ai || peer.ws)), rematch: [...room.rematch.keys()].map((tk) => room.players.find((q) => q.token === tk)?.side) });
   }
+  armRoll(room);
   if (room.tourRoom) tourAfter(room);
 }
 function start(room) {
@@ -128,6 +129,19 @@ function start(room) {
   room.g = newGame({ name: pa.name, deck: pa.deck.cards, hp: 15 }, { name: pb.name, deck: pb.deck.cards, hp: 15 });
   room.seq++; room.last = null; room.rematch = new Map();
   broadcast(room);
+}
+// Turn-order roll: the server's newGame rolls the dice. Only the winner may choose; after ROLL_MS (animation + 15 s) they go first by default.
+const ROLL_MS = Number(process.env.ROLL_MS || 17000);
+function armRoll(room) {
+  const g = room.g;
+  if (!g || g.phase !== "roll" || !g.roll || room.rollG === g.roll.id) return;
+  room.rollG = g.roll.id; room.rollAt = Date.now(); clearTimeout(room.rollT);
+  room.rollT = setTimeout(() => {
+    if (!room.g || room.g.phase !== "roll" || !room.g.roll || room.g.roll.id !== room.rollG) return;
+    const w = room.g.roll.winner;
+    room.g = apply(room.g, { t: "first", side: w, first: true }); room.seq++; room.last = { action: { t: "first", side: w, first: true, auto: true }, actor: w };
+    broadcast(room);
+  }, ROLL_MS);
 }
 function attach(room, p, ws) {
   if (p.ws && p.ws !== ws) { try { send(p.ws, { t: "error", msg: "This seat was opened on another device.", fatal: true }); p.ws.close(); } catch {} }
@@ -191,6 +205,7 @@ function simMatch(nameA, nameB) {
   }
   let g = newGame({ name: nameA, deck: picks.a, hp: 15 }, { name: nameB, deck: picks.b, hp: 15 });
   for (let k = 0; k < 3000 && !g.winner; k++) {
+    if (g.phase === "roll") { g = apply(g, aiAction(g)); continue; }
     if (g.phase === "mull") { const sd = g.mull.a < 0 ? "a" : "b"; g = apply(g, { t: "mull", side: sd, idx: aiMulligan(g, sd) }); continue; }
     let n = apply(g, aiAction(g)); if (n === g) n = apply(g, { t: "end" }); if (n === g) break; g = n;
   }
@@ -199,7 +214,7 @@ function simMatch(nameA, nameB) {
 }
 function startMatch(room, mi, sa, sb) {
   const t = room.tour, A = t.seats[sa], B = t.seats[sb];
-  // Coin flip for who goes first in each match.
+  // Coin flip for seats; a dice roll at the start of the match decides who goes first.
   const flip = crypto.randomInt(2) === 1;
   const rec = { mi, sa, sb, first: flip ? sb : sa, status: "draft", winner: null, rounds: 0, hp: null, sim: false, room: null };
   t.matches[mi] = rec;
@@ -256,6 +271,13 @@ function aiStep(room) {
     return;
   }
   const g = room.g; if (!g || g.winner) return;
+  if (g.phase === "roll" && g.roll) {
+    const w = room.players.find((q) => q.side === g.roll.winner);
+    const wait = 3200 - (Date.now() - (room.rollAt || 0)); // let the human watch the dice land first
+    if (w && w.ai && wait > 0) { setTimeout(() => { if (alive(room)) aiStep(room); }, wait); return; }
+    if (w && w.ai) { room.g = apply(g, { t: "first", side: w.side, first: true }); room.seq++; room.last = { action: { t: "first", side: w.side, first: true }, actor: w.side }; broadcast(room); }
+    return;
+  }
   if (g.phase === "mull") {
     let changed = false;
     for (const q of room.players) if (q.ai && room.g.phase === "mull" && room.g.mull[q.side] < 0) { const idx = aiMulligan(room.g, q.side); room.g = apply(room.g, { t: "mull", side: q.side, idx }); room.seq++; room.last = { action: { t: "mull", side: q.side, n: idx.length }, actor: q.side }; changed = true; }
@@ -401,6 +423,16 @@ wss.on("connection", (ws) => {
     if (m.t === "act") {
       if (!room.g) { send(ws, { t: "error", msg: "Waiting for an opponent." }); return; }
       if (room.g.winner) { send(ws, { t: "error", msg: "The match is over." }); return; }
+      if (room.g.phase === "roll") {
+        // Turn-order roll: only the roll winner chooses to go first or second.
+        const a = m.action;
+        if (!a || a.t !== "first" || !room.g.roll || room.g.roll.winner !== p.side) { send(ws, { t: "error", msg: "Waiting for the roll winner to choose who goes first." }); broadcast(room); return; }
+        const next = apply(room.g, { t: "first", side: p.side, first: !!a.first });
+        if (next === room.g) { broadcast(room); return; }
+        room.g = next; room.seq++; room.last = { action: { t: "first", side: p.side, first: !!a.first }, actor: p.side };
+        broadcast(room);
+        return;
+      }
       if (room.g.phase === "mull") {
         // Opening-hand swap: both players choose privately and at the same time. Only the count is shared.
         const a = m.action;
