@@ -3,8 +3,8 @@
                                                               
                                                      
                                                        
-                                                                                                                                                                                                                                                                                                                                   
-                                                                                                                                    
+                                                                                                                                                                                                                                                                                                                                                    
+                                                                                                                                                      
                                                                                                                                                                                                  
                                                                                                                                                                                                                             
                                                    
@@ -92,6 +92,9 @@ const CARDS            = [
   { id: "warchief", name: "Goblin War Chief", cost: 4, kind: "unit", atk: 2, hp: 3, fac: "horde", text: "Hire: summon a 1/1 Goblin Grunt, then your Grunts get +1/+1.", flavor: "Wears a crown. Stole it, too." },
   { id: "ravager", name: "Orc Ravager", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "horde", swift: true, text: "Feast: +1/+1 whenever another friendly sellsword falls.", flavor: "Paints himself in the fallen." },
   { id: "jace", name: "Jace the Stalwart", cost: 5, kind: "unit", atk: 3, hp: 8, fac: "iron", guard: true, text: "Rage: heal 2 after each fight he survives.", flavor: "Blond as wheat, broad as a gate, and twice as hard to move." },
+  { id: "attorin", name: "Attorin, Line Breaker", cost: 5, kind: "unit", atk: 9, hp: 1, fac: "horde", text: "Last Pay: summon 3 Goblin Grunts.", flavor: "He breaks the line. The goblins fill the hole." },
+  { id: "zack", name: "Zack, Hollow-Hearted", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "shadow", swift: true, text: "Hire: give your strongest other sellsword Deadly.", flavor: "Nothing behind the eyes. Everything on the blade." },
+  { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
 ];
 const CARD                          = {};
 for (const c of CARDS) CARD[c.id] = c;
@@ -108,7 +111,7 @@ const RARITY                         = {
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
   poisoner: "rare", spymaster: "rare", priest: "rare", golem: "rare", shaman: "rare", gorger: "rare", troll: "rare", bloodfeast: "rare",
-  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic",
+  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic",
   warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
 };
 for (const c of CARDS) c.rarity = RARITY[c.id] || (c.legend ? "legendary" : "common");
@@ -131,6 +134,7 @@ function draw(g   , s      , n = 1) {
 }
 const RAGE_HEAL                         = { jace: 2 }; // Rage variant: heals instead of +1 attack
 const RAGE = ["berserker", "ogre", "skirmisher", "reaver", "juggernaut"], FEAST = ["bloodtusk", "brute", "ravager"];
+const isDeadly = (u      ) => !!u.deadly || !!CARD[u.id].deadly;
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
 function checkWin(g   ) { if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b"; }
@@ -211,6 +215,7 @@ function cleanup(g   ) {
         const gv = g[s].grave; if (g[s].recycle && gv && !CARD[d.id].token) gv.push(d.id);
         if (d.id === "moneylender" || d.id === "looter") draw(g, s);
         if (d.id === "squire") heal(g[s], 3);
+        if (d.id === "attorin") { summon(g, s, 3); push(g, `Attorin's Grimfang followers charge in`); }
         if (d.id === "kobold") g[other(s)].hp -= 1;
         if (d.id === "bomber") { const w = g[other(s)].board.filter((u) => !u.hidden && u.hp > 0).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
         for (const u of g[s].board) if (FEAST.includes(u.id)) { u.atk++; u.hp++; u.maxHp++; }
@@ -274,6 +279,7 @@ function apply(g0   , a        )    {
       if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
       if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
       if (c.id === "clerk") p.gold += 1;
+      if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
     } else {
@@ -312,11 +318,12 @@ function apply(g0   , a        )    {
       if (!d) return g0;
       const dc = CARD[d.id];
       const toD = u.atk, toU = d.atk;
-      d.hp -= toD; u.hp -= toU;
-      if (uc.deadly && toD > 0) d.hp = Math.min(d.hp, 0);
-      if (dc.deadly && toU > 0) u.hp = Math.min(u.hp, 0);
-      if (uc.drain) heal(p, toD);
-      if (dc.drain) heal(e, toU);
+      const hitD = () => { d.hp -= toD; if (isDeadly(u) && toD > 0) d.hp = Math.min(d.hp, 0); if (uc.drain) heal(p, toD); };
+      const hitU = () => { u.hp -= toU; if (isDeadly(d) && toU > 0) u.hp = Math.min(u.hp, 0); if (dc.drain) heal(e, toU); };
+      // First Strike: strikes before the other side; if that kills, no damage comes back. Both or neither: damage is simultaneous.
+      if (uc.first && !dc.first) { hitD(); if (d.hp > 0) hitU(); }
+      else if (dc.first && !uc.first) { hitU(); if (u.hp > 0) hitD(); }
+      else { hitD(); hitU(); }
       if (RAGE.includes(u.id) && u.hp > 0) u.atk++;
       if (RAGE.includes(d.id) && d.hp > 0) d.atk++;
       for (const x of [u, d]) if (RAGE_HEAL[x.id] && x.hp > 0) x.hp = Math.min(x.maxHp, x.hp + RAGE_HEAL[x.id]);
@@ -326,7 +333,7 @@ function apply(g0   , a        )    {
   }
   return g0;
 }
-const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (RAGE_HEAL[u.id] ? 2 : 0) + (CARD[u.id].deadly ? 3 : 0) + (CARD[u.id].legend ? 2 : 0);
+const value = (u      ) => u.atk + u.hp + (u.guard ? 1 : 0) + (RAGE_HEAL[u.id] ? 2 : 0) + (isDeadly(u) ? 3 : 0) + (CARD[u.id].first ? 1 : 0) + (CARD[u.id].legend ? 2 : 0);
 function aiAction(g   )         {
   if (g.phase === "mull" && g.mull) { const ms       = g.mull.a < 0 ? "a" : "b"; return { t: "mull", side: ms, idx: aiMulligan(g, ms) }; }
   const s = g.turn, o = other(s), p = g[s], e = g[o];
@@ -338,6 +345,7 @@ function aiAction(g   )         {
     if (c.kind === "unit") {
       if (c.id === "drummer" && p.board.length === 0 && p.hand.length > 2 && p.gold < 4) continue;
       if (c.id === "gorger" && p.board.length === 0) continue;
+      if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
       return { t: "play", idx };
     }
@@ -372,14 +380,14 @@ function aiAction(g   )         {
   if (ready.length) {
     const facePower = ready.reduce((x, u) => x + u.atk, 0);
     const guards = vis.filter((u) => u.guard);
-    const u = ready.slice().sort((x, y) => (CARD[y.id].deadly ? 1 : 0) - (CARD[x.id].deadly ? 1 : 0))[0];
+    const u = ready.slice().sort((x, y) => (isDeadly(y) ? 1 : 0) - (isDeadly(x) ? 1 : 0))[0];
     if (guards.length) {
-      const g1 = CARD[u.id].deadly ? guards.slice().sort((x, y) => value(y) - value(x))[0] : guards.slice().sort((x, y) => x.hp - y.hp)[0];
+      const g1 = isDeadly(u) ? guards.slice().sort((x, y) => value(y) - value(x))[0] : guards.slice().sort((x, y) => x.hp - y.hp)[0];
       return { t: "attack", uid: u.uid, target: { side: o, uid: g1.uid } };
     }
     if (facePower >= e.hp) return { t: "attack", uid: u.uid, target: { side: o, uid: "hero" } };
-    const dl = !!CARD[u.id].deadly;
-    const trades = vis.filter((d) => (dl || d.hp <= u.atk) && (d.atk < u.hp || value(d) > value(u) + 1) && !(CARD[d.id].deadly && u.atk < d.hp && value(u) > 4)).sort((x, y) => value(y) - value(x));
+    const dl = isDeadly(u), fu = !!CARD[u.id].first;
+    const trades = vis.filter((d) => { const fd = !!CARD[d.id].first; const kills = dl || d.hp <= u.atk; if (fd && !fu && d.atk >= u.hp) return false; return kills && (d.atk < u.hp || (fu && !fd) || value(d) > value(u) + 1) && !(isDeadly(d) && u.atk < d.hp && value(u) > 4 && !(fu && !fd)); }).sort((x, y) => value(y) - value(x));
     if (trades.length) return { t: "attack", uid: u.uid, target: { side: o, uid: trades[0].uid } };
     return { t: "attack", uid: u.uid, target: { side: o, uid: "hero" } };
   }
@@ -415,4 +423,4 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, aiMulligan, newGame, clone, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
