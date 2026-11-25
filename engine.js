@@ -98,16 +98,17 @@ const CARDS            = [
   { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
   { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 4, fac: "gilded", text: "Hire: heal your captain and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
   { id: "bogleech", name: "Bog Leech", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: heal your captain 1 and gain +1 attack.", flavor: "It takes a little. It gives a little back." },
-  { id: "rotmaw", name: "Rotmaw, the Hungry Wyrm", cost: 6, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "eat", n: 1 }, text: "Each turn it eats a random ally and gains its attack and health. Fed: 2 damage to a random enemy.", flavor: "Rot never fills it. Nothing ever has." },
+  { id: "rotmaw", name: "Rotmaw, the Hungry Wyrm", cost: 5, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "eat", n: 1 }, text: "Each turn it eats a random ally and gains its attack and health. Fed: 2 damage to a random enemy.", flavor: "Rot never fills it. Nothing ever has." },
+  { id: "hollowqueen", name: "Hollow Queen", cost: 6, kind: "unit", atk: 0, hp: 1, fac: "beast", trib: { k: "gold", n: 2 }, legend: true, isNew: true, text: "Hire: devour the enemy sellsword with the most attack + health (even Hidden). Gain its attack and health.", flavor: "She is never full. She is only ever hollow." },
   { id: "slime", name: "Slime", cost: 0, kind: "unit", atk: 1, hp: 1, fac: "beast", flavor: "It was a puddle. Then it was hungry." },
   { id: "tunnelcent", name: "Tunnel Centipede", cost: 2, kind: "unit", atk: 3, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: +1 health.", flavor: "Every trench is its burrow." },
   { id: "carcass", name: "Carcass Beetle", cost: 4, kind: "unit", atk: 2, hp: 5, fac: "beast", guard: true, trib: { k: "gold", n: 2 }, text: "Fed: +1/+1.", flavor: "Wears last week's casualties as armor." },
-  { id: "boar", name: "Bristleback Boar", cost: 3, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "gold", n: 3 }, flavor: "Feed it, or stand behind something solid." },
+  { id: "boar", name: "Bristleback Boar", cost: 3, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "gold", n: 2 }, flavor: "Feed it, or stand behind something solid." },
   { id: "scavworg", name: "Scavenger Worg", cost: 2, kind: "unit", atk: 2, hp: 3, fac: "beast", trib: { k: "discard", n: 1 }, text: "Fed: draw a card.", flavor: "Brings back what it doesn't eat." },
   { id: "bear", name: "Stoneskin Bear", cost: 4, kind: "unit", atk: 5, hp: 6, fac: "beast", trib: { k: "gold", n: 3 }, text: "Fed: +1/+2.", flavor: "Arrows stick. It does not notice." },
   { id: "mossmen", name: "Moss Men", cost: 1, kind: "unit", atk: 1, hp: 1, fac: "beast", hidden: true, trib: { k: "gold", n: 1 }, text: "Fed: +1/+1.", flavor: "The hill was watching the whole time." },
   { id: "giantcent", name: "Giant Centipede", cost: 4, kind: "unit", atk: 5, hp: 5, fac: "beast", hidden: true, trib: { k: "hp", n: 2 }, flavor: "It only takes a little blood. From you." },
-  { id: "giantslime", name: "Giant Slime", cost: 3, kind: "unit", atk: 1, hp: 6, fac: "beast", text: "At the end of your turn, heal 1.", flavor: "Cut it in half. Now there's more of it." },
+  { id: "giantslime", name: "Giant Slime", cost: 3, kind: "unit", atk: 2, hp: 6, fac: "beast", text: "At the end of your turn, heal 1.", flavor: "Cut it in half. Now there's more of it." },
   { id: "madcurse", name: "Maddening Curse", cost: 3, kind: "spell", fac: "beast", target: "enemyUnit", text: "Give an enemy sellsword Tribute 3 gold and Stun it.", flavor: "Feed the whisper, or it feeds on you." },
   { id: "gorge", name: "Gorge", cost: 2, kind: "spell", fac: "beast", target: "friend", text: "Your chosen sellsword devours your weakest other sellsword and gains its attack and health.", flavor: "Nothing in the wild goes to waste." },
   { id: "behemoth", name: "Ironhide Behemoth", cost: 6, kind: "unit", atk: 5, hp: 6, fac: "beast", trib: { k: "gold", n: 4 }, text: "Fed: gain Guard and +2/+2.", flavor: "Every meal adds another plate of hide." },
@@ -131,7 +132,7 @@ const RARITY                         = {
   nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic", graci: "epic", rotmaw: "epic",
   slime: "common", tunnelcent: "common", carcass: "common", boar: "common", scavworg: "common", bear: "common", mossmen: "common", giantcent: "common",
   giantslime: "rare", madcurse: "rare", gorge: "rare",
-  warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
+  warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary", hollowqueen: "legendary",
 };
 for (const c of CARDS) c.rarity = RARITY[c.id] || (c.legend ? "legendary" : "common");
 const rarityOf = (c         )         => c.rarity || "common";
@@ -370,6 +371,12 @@ function apply(g0   , a        )    {
       if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
+      if (c.id === "hollowqueen") {
+        // Devours the enemy sellsword with the highest attack + current health (random tiebreak, Hidden included); it is destroyed and she gains its attack and current health.
+        const es = e.board.filter((u) => u.hp > 0);
+        if (es.length) { const top = Math.max(...es.map((u) => u.atk + u.hp)); const cs = es.filter((u) => u.atk + u.hp === top); const v = cs[Math.floor(Math.random() * cs.length)];
+          const ga = v.atk, gh = v.hp; nu.atk += ga; nu.hp += gh; nu.maxHp += gh; v.hp = 0; push(g, `Hollow Queen devoured ${CARD[v.id].name} (+${ga}/+${gh})`); }
+      }
     } else {
       if (c.id === "warcall") summon(g, s, 2);
       if (c.id === "bloodfeast" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; draw(g, s, 2); }
@@ -452,6 +459,7 @@ function aiAction(g   )         {
     if (c.kind === "unit") {
       if (c.id === "drummer" && p.board.length === 0 && p.hand.length > 2 && p.gold < 4) continue;
       if (c.id === "gorger" && p.board.length === 0) continue;
+      if (c.id === "hollowqueen" && !e.board.some((u) => u.hp > 0 && u.atk + u.hp >= 4)) continue;
       if (c.trib && c.trib.k === "gold" && goldDue(p) + c.trib.n > Math.min(MAX_GOLD, p.maxGold + 1)) continue;
       if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
