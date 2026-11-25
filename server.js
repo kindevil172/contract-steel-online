@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan } from "./engine.js";
+import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, newSiege, siegeDo, siegeFinish } from "./engine.js";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(DIR, "public");
@@ -144,12 +144,111 @@ function armRoll(room) {
   }, ROLL_MS);
 }
 function attach(room, p, ws) {
+  if (room.mode === "siege") {
+    if (p.ws && p.ws !== ws) { try { send(p.ws, { t: "error", msg: "This seat was opened on another device.", fatal: true }); p.ws.close(); } catch {} }
+    p.ws = ws; ws.room = room; ws.player = p; room.touched = Date.now();
+    send(ws, { t: "room", mode: "siege", code: room.code, token: p.token, side: null, name: p.name });
+    const peer = room.players.find((q) => q !== p);
+    if (peer) send(peer.ws, { t: "peer", here: true, name: p.name });
+    if (room.siege) siegeBroadcast(room); else send(ws, { t: "wait", code: room.code, mode: "siege" });
+    return;
+  }
   if (p.ws && p.ws !== ws) { try { send(p.ws, { t: "error", msg: "This seat was opened on another device.", fatal: true }); p.ws.close(); } catch {} }
   p.ws = ws; ws.room = room; ws.player = p; room.touched = Date.now();
   send(ws, { t: "room", mode: room.mode, code: room.code, token: p.token, side: p.side, name: p.name });
   const peer = room.players.find((q) => q !== p);
   if (peer) send(peer.ws, { t: "peer", here: true, name: p.name });
   if (room.draft) { sendDraft(room, p); if (peer) sendDraft(room, peer); } else if (room.g) broadcast(room); else send(ws, { t: "wait", code: room.code, mode: room.mode });
+}
+
+// ================= SIEGE (co-op) =================
+// Two players defend one city with a shared war chest. Day actions come from both; each presses Ready.
+// Night battles alternate commanders; the server plays the wave. If the commander is offline, the other player may act.
+const SIEGE = { aiMs: Number(process.env.SIEGE_AI_MS) || 850, finMs: Number(process.env.SIEGE_FIN_MS) || 7000 };
+const sHere = (q) => !!(q && q.ws);
+function siegeView(room, p) {
+  const s = room.siege; const v = JSON.parse(JSON.stringify(s));
+  if (v.g) { v.g.b.hand = v.g.b.hand.map(() => "?"); v.g.b.deck = v.g.b.deck.map(() => "?"); }
+  if (v.fights) for (const f of v.fights) f.deck = f.deck.map(() => "?");
+  const peer = room.players.find((q) => q !== p);
+  return { t: "siege", code: room.code, me: p.idx, n: room.seq, s: v, peer: sHere(peer), names: room.players.map((q) => q.name) };
+}
+function siegeBroadcast(room) {
+  room.seq++;
+  for (const p of room.players) if (p.ws) send(p.ws, siegeView(room, p));
+  siegeTick(room);
+}
+function siegeTick(room) {
+  const s = room.siege; clearTimeout(room.sT);
+  if (!s || s.phase !== "night" || !s.g) return;
+  const g = s.g;
+  if (g.winner) { room.sT = setTimeout(() => { if (room.siege === s && s.g === g) { room.siege = siegeFinish(s, g); siegeBroadcast(room); } }, SIEGE.finMs); return; }
+  if (g.turn !== "b") return;
+  room.sT = setTimeout(() => {
+    if (room.siege !== s || s.g !== g) return;
+    let n; try { n = apply(g, aiAction(g)); if (n === g) n = apply(g, { t: "end" }); } catch (e) { console.error("siege ai", e); n = apply(g, { t: "end" }); }
+    room.siege = { ...s, g: n }; room.last = null; siegeBroadcast(room);
+  }, SIEGE.aiMs);
+}
+function cleanSAct(a) {
+  if (!a || typeof a.t !== "string") return null;
+  const I = (x) => (Number.isInteger(x) ? x : -1);
+  if (a.t === "buy") return { t: "buy", i: I(a.i) };
+  if (a.t === "place") return { t: "place", sid: I(a.sid), zone: I(a.zone) };
+  if (a.t === "unplace" || a.t === "buyback") return { t: a.t, sid: I(a.sid) };
+  if (a.t === "reroll") return { t: "reroll" };
+  if (a.t === "ready") return { t: "ready", on: a.on !== false };
+  return null;
+}
+function handleSiege(ws, room, p, m) {
+  room.touched = Date.now();
+  const s = room.siege;
+  if (m.t === "leave") {
+    room.players = room.players.filter((q) => q !== p); ws.room = null; ws.player = null; send(ws, { t: "left" });
+    if (!room.players.length) { clearTimeout(room.sT); rooms.delete(room.code); return true; }
+    const q = room.players[0];
+    if (s) {
+      // the city carries on with one defender
+      const ns = JSON.parse(JSON.stringify(s)); ns.players = [ns.players[q.idx] || q.name]; ns.ready = [false]; ns.nextCmd = 0; for (const f of ns.fights) f.cmd = 0;
+      ns.log = [`${p.name} left. ${q.name} defends the city alone.`].concat(ns.log).slice(0, 14);
+      room.siege = ns;
+    }
+    q.idx = 0;
+    send(q.ws, { t: "peer", here: false, left: true, name: p.name });
+    if (room.siege) siegeBroadcast(room); else send(q.ws, { t: "wait", code: room.code, mode: "siege" });
+    return true;
+  }
+  if (!s) { send(ws, { t: "error", msg: "Waiting for your friend to join." }); return true; }
+  if (m.t === "sact") {
+    const a = cleanSAct(m.a); if (!a) { send(ws, { t: "error", msg: "Invalid action." }); return true; }
+    if (s.phase !== "day") { send(ws, { t: "error", msg: "That can only be done during the day." }); return true; }
+    let n = siegeDo(s, a, p.idx);
+    // Ready with the other defender offline ends the day for both.
+    if (a.t === "ready" && a.on && n !== s && n.phase === "day") { const peer = room.players.find((q) => q !== p); if (peer && !sHere(peer)) n = siegeDo(n, { t: "ready", on: true }, peer.idx); }
+    if (n === s) { send(ws, { t: "error", msg: a.t === "buy" || a.t === "buyback" || a.t === "reroll" ? "Not enough gold." : a.t === "place" ? "That zone can't take it (full or destroyed)." : "That isn't allowed right now." }); siegeBroadcast(room); return true; }
+    room.siege = n; siegeBroadcast(room); return true;
+  }
+  if (m.t === "splay") {
+    const g = s.g; const f = s.fights[s.cur];
+    if (s.phase !== "night" || !g || !f) { send(ws, { t: "error", msg: "No battle right now." }); return true; }
+    if (g.winner) { send(ws, { t: "error", msg: "This battle is over." }); return true; }
+    const cmdP = room.players.find((q) => q.idx === f.cmd);
+    if (f.cmd !== p.idx && cmdP && sHere(cmdP)) { send(ws, { t: "error", msg: `${cmdP.name} commands this fight.` }); return true; }
+    if (g.turn !== "a") { send(ws, { t: "error", msg: "The wave is moving." }); return true; }
+    const a = m.action;
+    const ok = a && ((a.t === "end") || (a.t === "play" && Number.isInteger(a.idx)) || (a.t === "attack" && Number.isInteger(a.uid) && a.target) || (a.t === "trib" && Number.isInteger(a.uid)));
+    if (!ok) { send(ws, { t: "error", msg: "Invalid move." }); return true; }
+    const tg = (t) => ({ side: t.side === "b" ? "b" : "a", uid: t.uid === "hero" ? "hero" : Number(t.uid) });
+    const clean = a.t === "end" ? { t: "end" } : a.t === "trib" ? { t: "trib", uid: a.uid, pay: !!a.pay } : a.t === "play" ? { t: "play", idx: a.idx, ...(a.alt ? { alt: true } : {}), ...(a.target ? { target: tg(a.target) } : {}) } : { t: "attack", uid: a.uid, target: tg(a.target) };
+    let n; try { n = apply(g, clean); } catch (e) { console.error("siege apply", e); n = g; }
+    if (n === g) { send(ws, { t: "error", msg: "That move isn't allowed right now." }); siegeBroadcast(room); return true; }
+    room.siege = { ...s, g: n }; siegeBroadcast(room); return true;
+  }
+  if (m.t === "sfin") {
+    if (s.phase === "night" && s.g && s.g.winner) { room.siege = siegeFinish(s, s.g); siegeBroadcast(room); }
+    return true;
+  }
+  return true;
 }
 
 // ================= TOURNAMENT =================
@@ -355,6 +454,13 @@ wss.on("connection", (ws) => {
         rooms.set(code, room); attachTour(room, seats[0], ws);
         return;
       }
+      if (m.mode === "siege") {
+        const code = newCode();
+        const room = { code, mode: "siege", players: [], siege: null, g: null, draft: null, seq: 0, last: null, touched: Date.now(), rematch: new Map() };
+        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Host"), idx: 0, side: "a", ws: null };
+        room.players.push(p); rooms.set(code, room); attach(room, p, ws);
+        return;
+      }
       const mode = m.mode === "draft" ? "draft" : "match";
       const bad = mode === "draft" ? null : checkDeck(m.deck); if (bad) { send(ws, { t: "error", msg: bad }); return; }
       const code = newCode();
@@ -378,6 +484,14 @@ wss.on("connection", (ws) => {
         return;
       }
       if (room.players.length >= 2) { send(ws, { t: "error", msg: "That room already has two players." }); return; }
+      if (room.mode === "siege") {
+        if (room.siege) { send(ws, { t: "error", msg: "That siege has already started." }); return; }
+        const host = room.players[0];
+        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Guest"), idx: 1, side: "b", ws: null };
+        if (p.name === host.name) p.name = `${p.name} 2`;
+        room.players.push(p); room.siege = newSiege([host.name, p.name]); attach(room, p, ws);
+        return;
+      }
       const draft = room.mode === "draft";
       const bad = draft ? null : checkDeck(m.deck); if (bad) { send(ws, { t: "error", msg: bad }); return; }
       const host = room.players[0];
@@ -404,6 +518,7 @@ wss.on("connection", (ws) => {
       room = rec.room; p = room.players.find((q) => q.seat === ws.player);
     }
     room.touched = Date.now();
+    if (room.mode === "siege") { handleSiege(ws, room, p, m); return; }
     if (m.t === "pick") {
       const err = takePick(room, p.side, m.idx, false);
       if (err) { send(ws, { t: "error", msg: err }); sendDraft(room, p); }
@@ -487,11 +602,12 @@ wss.on("connection", (ws) => {
     }
     p.ws = null; room.touched = Date.now();
     for (const q of room.players) if (q !== p) send(q.ws, { t: "peer", here: false, name: p.name });
+    if (room.mode === "siege" && room.siege) siegeBroadcast(room);
   });
 });
 setInterval(() => {
   for (const ws of wss.clients) { if (!ws.alive) { ws.terminate(); continue; } ws.alive = false; ws.ping(); }
   const now = Date.now();
-  for (const [code, room] of rooms) if (now - room.touched > ROOM_IDLE_MS && room.players.every((p) => !p.ws)) { if (room.draft) clearTimeout(room.draft.timer); rooms.delete(code); }
+  for (const [code, room] of rooms) if (now - room.touched > ROOM_IDLE_MS && room.players.every((p) => !p.ws)) { if (room.draft) clearTimeout(room.draft.timer); clearTimeout(room.sT); rooms.delete(code); }
 }, 15000);
 server.listen(PORT, () => console.log(`Contract & Steel online on http://localhost:${PORT}`));

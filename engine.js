@@ -5,9 +5,9 @@
                                                               
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                                                 
-                                                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                
+                                                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                                                                                                                                     
                                                    
                                                                                                                                                                                                                                                                           
 
@@ -152,6 +152,7 @@ function draw(g   , s      , n = 1) {
   for (let i = 0; i < n; i++) {
     let c = p.deck.shift();
     if (!c && p.recycle && p.grave && p.grave.length) { p.deck = shuffle(p.grave); p.grave = []; c = p.deck.shift(); push(g, `${p.name} reshuffled ${p.deck.length + 1} spent cards into the deck`); }
+    if (!c && p.nofat) continue;
     if (!c) { p.fatigue++; p.hp -= p.fatigue; push(g, `${p.name}: no contracts left, ${p.fatigue} damage`); continue; }
     if (p.hand.length >= HAND_MAX) { push(g, `${p.name} discarded ${CARD[c].name} (hand full)`); if (p.recycle && p.grave) p.grave.push(c); } else p.hand.push(c);
   }
@@ -201,7 +202,11 @@ function payTribute(g   , s      , uid        , pay         ) {
 }
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
-function checkWin(g   ) { if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b"; }
+function checkWin(g   ) {
+  if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b";
+  // Siege: the wave breaks when it has nothing left to send, and withdraws at dawn after SIEGE_ROUNDS rounds.
+  if (!g.winner && g.siege) { const b = g.b; if (!b.board.some((u) => u.hp > 0) && !b.deck.length && !b.hand.some((id) => CARD[id].kind === "unit")) g.winner = "a"; else if (g.round > SIEGE_ROUNDS) g.winner = "a"; }
+}
 function startTurn(g   , s      ) {
   g.turn = s; const p = g[s];
   p.maxGold = Math.min(MAX_GOLD, p.maxGold + (p.maxGold === 0 ? 2 : 1)); p.gold = p.maxGold;
@@ -245,9 +250,9 @@ function chooseFirst(g0   , side      , first         )    {
 }
 // Simple mulligan rule for the computer: send back anything costing 5 or more.
 const aiMulligan = (g   , side      )           => g[side].hand.map((id, i) => (CARD[id].cost >= 5 ? i : -1)).filter((i) => i >= 0);
-                                                                                                                                                 
+                                                                                                                                                                  
 function newGame(A         , B         )    {
-  const mk = (c         )         => ({ name: c.name, hp: c.hp, maxHp: c.maxHp ?? c.hp, gold: 0, maxGold: c.ramp ?? 0, deck: shuffle(c.deck), hand: [], board: [], fatigue: 0, recycle: !!c.recycle, grave: [] });
+  const mk = (c         )         => ({ name: c.name, hp: c.hp, maxHp: c.maxHp ?? c.hp, gold: 0, maxGold: c.ramp ?? 0, deck: shuffle(c.deck), hand: [], board: [], fatigue: 0, recycle: !!c.recycle, grave: [], ...(c.nofat ? { nofat: true } : {}) });
   // Turn order: each side rolls a die (ties are rerolled); the higher roll chooses to go first or second.
   const d6 = () => 1 + Math.floor(Math.random() * 6);
   let ra = d6(), rb = d6(), ties = 0; while (ra === rb && ties < 50) { ties++; ra = d6(); rb = d6(); }
@@ -562,5 +567,228 @@ function deckProblems(cards          , size = DECK_SIZE)           {
 }
 const countOf = (cards          , id        ) => cards.filter((c) => c === id).length;
 
+// ================= SIEGE DEFENSE =================
+// Co-op last stand: a walled city with 4 outer gates, 4 inner wards and the castle. Days: shared gold buys cards and garrisons zones.
+// Nights: waves hit reachable zones; each fight uses the normal battle rules (garrison already on the field, the zone's walls are the captain).
+                                           
+                                                                            
+                                                                                                                                            
+                                                                                                                                                                                                                                                  
+                 
+                                                                                                                                                                  
+                                                                                                                                                            
+                                                                                                                    
+ 
+                                                                                                                                                                                                 
+const SIEGE_DAYS = 12, SIEGE_ROUNDS = 14, SIEGE_SHOP = 6, SIEGE_REROLL = 1;
+// Tuning knobs (sims adjust these): gold, walls, and how fast the waves grow.
+const ST = { start: 10, base: 1, zoneInc: 1, castleInc: 1, win: 2, boss: 3, wallO: 10, wallI: 13, wallC: 16, hpBase: 6, hpDay: 0.5, deckBase: 2, deckDiv: 3, vanBase: 1, vanDiv: 5, buffDiv: 8, rampDiv: 4, bossAtkDiv: 3, bossHp: 1, n2: 2, n3: 5, n4: 10, retakeHp: 3 };
+const SIEGE_START_GOLD = ST.start;
+const SZ_NAMES = ["North Gate", "East Gate", "South Gate", "West Gate", "North Ward", "East Ward", "South Ward", "West Ward", "The Castle"];
+const szWalls = (k        ) => (k === "outer" ? ST.wallO : k === "inner" ? ST.wallI : ST.wallC);
+const szCap = (z       ) => (z.kind === "castle" ? 6 : 4);
+const SZ_TAC_CAP = 3;
+const siegeBehind = (i        ) => (i < 4 ? i + 4 : i < 8 ? 8 : -1);
+const siegeIncomeOf = (z       ) => (z.st !== "held" ? 0 : z.kind === "castle" ? ST.castleInc : ST.zoneInc);
+const siegeIncome = (s       ) => ST.base + s.zones.reduce((x, z) => x + siegeIncomeOf(z), 0);
+const siegePrice = (id        ) => Math.max(1, CARD[id].cost);
+const siegeBuyback = (id        ) => Math.max(1, Math.ceil(siegePrice(id) / 2));
+const isBoss = (day        ) => day % 3 === 0;
+function siegeReachable(s       , i        )          {
+  const z = s.zones[i]; if (z.st !== "held") return false;
+  if (z.kind === "outer") return true;
+  if (z.kind === "inner") return s.zones[i - 4].st === "lost";
+  return s.zones.slice(4, 8).some((x) => x.st === "lost");
+}
+const SHOP_POOL = ()            => COLLECTION.filter((c) => c.id !== "debt" && c.id !== "bonus");
+function siegeShopRoll()           {
+  const pool                           = {};
+  for (const c of SHOP_POOL()) (pool[rarityOf(c)] = pool[rarityOf(c)] || []).push(c.id);
+  const out           = [];
+  while (out.length < SIEGE_SHOP) {
+    let x = Math.floor(Math.random() * 100), r = "common";
+    for (const [k, w] of [["common", 60], ["rare", 29], ["epic", 8], ["legendary", 3]]                      ) { if (x < w) { r = k; break; } x -= w; }
+    const l = (pool[r] || []).filter((id) => !out.includes(id)); if (l.length) out.push(l[Math.floor(Math.random() * l.length)]);
+  }
+  return out;
+}
+function newSiege(players          )        {
+  const zones          = SZ_NAMES.map((name, i) => ({ i, kind: (i < 4 ? "outer" : i < 8 ? "inner" : "castle")          , name, st: "held"         , units: [], tactics: [], foe: [] }));
+  const s        = { v: 1, day: 1, phase: "day", gold: ST.start, zones, reserve: [], camp: [], shop: siegeShopRoll(), uid: 1, log: [], fights: [], cur: -1, g: null, push: [], players: players.slice(0, 2), ready: players.slice(0, 2).map(() => false), report: [], stats: { won: 0, lost: 0, zones: 0, bosses: 0, fallen: 0 }, nextCmd: 0, seq: 0 };
+  slog(s, `Day 1. The banners of every company are on the horizon. ${ST.start} gold in the war chest; hold the walls for ${SIEGE_DAYS} nights.`);
+  return s;
+}
+function slog(s       , m        ) { s.log = [m].concat(s.log).slice(0, 14); }
+const sClone = (s       )        => JSON.parse(JSON.stringify(s));
+const findCard = (s       , sid        )                                                                              => {
+  let i = s.reserve.findIndex((x) => x.sid === sid); if (i >= 0) return { where: "reserve", list: s.reserve, c: s.reserve[i] };
+  for (const z of s.zones) for (const list of [z.units, z.tactics]) { i = list.findIndex((x) => x.sid === sid); if (i >= 0) return { where: "zone", zone: z, list, c: list[i] }; }
+  return null;
+};
+const pname = (s       , who        ) => s.players[who] || "You";
+// Day actions from either player (who = player index). Returns the same object when the action isn't allowed.
+function siegeDo(s0       , a      , who        )        {
+  if (s0.phase !== "day" || !a) return s0;
+  const s = sClone(s0); const nm = pname(s, who); const by = s.players.length > 1 ? ` (${nm})` : "";
+  if (a.t === "buy") {
+    const id = s.shop[a.i]; if (!id || s.gold < siegePrice(id)) return s0;
+    s.gold -= siegePrice(id); s.shop[a.i] = null; s.reserve.push({ sid: s.uid++, id, by: nm });
+    slog(s, `Bought ${CARD[id].name} for ${siegePrice(id)} gold${by}`);
+  } else if (a.t === "reroll") {
+    if (s.gold < SIEGE_REROLL) return s0; s.gold -= SIEGE_REROLL; s.shop = siegeShopRoll(); slog(s, `New offers at the market${by}`);
+  } else if (a.t === "buyback") {
+    const i = s.camp.findIndex((x) => x.sid === a.sid); if (i < 0) return s0; const c = s.camp[i]; const pr = siegeBuyback(c.id); if (s.gold < pr) return s0;
+    s.gold -= pr; s.camp.splice(i, 1); c.wounded = true; c.by = nm; s.reserve.push(c); slog(s, `${CARD[c.id].name} bought back from the healing camp for ${pr} gold (wounded)${by}`);
+  } else if (a.t === "place") {
+    const z = s.zones[a.zone]; const f = findCard(s, a.sid); if (!z || !f || z.st === "lost") return s0;
+    const isUnit = CARD[f.c.id].kind === "unit"; const dest = isUnit ? z.units : z.tactics;
+    if (f.zone && f.zone.i === z.i) return s0;
+    if (dest.length >= (isUnit ? szCap(z) : SZ_TAC_CAP)) return s0;
+    f.list.splice(f.list.indexOf(f.c), 1); f.c.by = nm; dest.push(f.c);
+    slog(s, `${CARD[f.c.id].name} ${isUnit ? "posted to" : "sent to"} ${z.name}${by}`);
+  } else if (a.t === "unplace") {
+    const f = findCard(s, a.sid); if (!f || f.where !== "zone") return s0;
+    f.list.splice(f.list.indexOf(f.c), 1); s.reserve.push(f.c); slog(s, `${CARD[f.c.id].name} pulled back to the reserve${by}`);
+  } else if (a.t === "ready") {
+    s.ready[who] = a.on !== false;
+    if (s.ready.every((x) => x)) siegeNight(s);
+  } else return s0;
+  s.seq++;
+  return s;
+}
+// ---------- waves ----------
+const WAVE_POOL = ()           => PREMADE.flatMap((d) => d.cards).filter((id) => CARD[id] && !CARD[id].legend);
+const pickN =     (a     , n        )      => shuffle(a).slice(0, n);
+function waveUnit(g                 , id        , buff = 0)       { const c = CARD[id]; return { uid: g.uid++, id, atk: (c.atk || 0), hp: (c.hp || 1) + buff, maxHp: (c.hp || 1) + buff, ready: false, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) }; }
+function waveFight(s       , zone        , kind                 , carry        , boss         )         {
+  const d = s.day, pool = WAVE_POOL();
+  const units = pool.filter((id) => CARD[id].kind === "unit" && CARD[id].cost <= 1 + Math.ceil(d / 2));
+  const vanN = Math.min(5, ST.vanBase + Math.floor(d / ST.vanDiv)) - carry.length;
+  const buff = Math.floor((d - 1) / ST.buffDiv);
+  const van         = carry.map((u) => ({ ...u, ready: false, stun: 0 }));
+  for (const id of pickN(units, Math.max(0, vanN))) van.push(waveUnit(s, id, buff));
+  let bossId                    ;
+  if (boss) {
+    const bp = COLLECTION.filter((c) => c.kind === "unit" && (rarityOf(c) === "epic" || rarityOf(c) === "legendary") && !c.trib);
+    const b = bp[Math.floor(Math.random() * bp.length)]; bossId = b.id;
+    const u = waveUnit(s, b.id, Math.round(d * ST.bossHp)); u.atk += Math.floor(d / ST.bossAtkDiv); if (d >= 12) u.guard = true; van.unshift(u);
+  }
+  const deck = pickN(pool, ST.deckBase + Math.ceil(d / ST.deckDiv));
+  return { zone, kind, van: van.slice(0, BOARD_MAX), deck, hp: ST.hpBase + Math.round(d * ST.hpDay), ramp: Math.min(5, Math.floor(d / ST.rampDiv)), boss: bossId, name: boss ? `${CARD[bossId ].name}'s host` : kind === "push" ? "Breach column" : `Wave ${d}`, cmd: 0 };
+}
+function siegeNight(s       ) {
+  s.phase = "night"; s.fights = []; s.report = []; s.ready = s.ready.map(() => false);
+  const d = s.day;
+  // 1) enemies holding a zone since last night: retake or lose it
+  for (const z of s.zones) if (z.st === "contested") {
+    const deck = pickN(WAVE_POOL(), 1 + Math.floor(d / 3));
+    s.fights.push({ zone: z.i, kind: "retake", van: z.foe.map((u) => ({ ...u, ready: false, stun: 0 })), deck, hp: ST.retakeHp + Math.floor(d / 2), ramp: Math.min(5, Math.floor(d / ST.rampDiv)), name: "Occupiers", cmd: 0 });
+  }
+  // 2) breach columns pushing into the zone behind a destroyed one
+  const pushT = new Set        ();
+  for (const p of s.push) { if (s.zones[p.zone].st !== "held") continue; pushT.add(p.zone); s.fights.push(waveFight(s, p.zone, "push", p.units.slice(0, BOARD_MAX - 1), false)); }
+  s.push = [];
+  // 3) tonight's wave hits some reachable zones; every 3rd night brings a boss
+  const reach = s.zones.filter((z) => siegeReachable(s, z.i) && !pushT.has(z.i)).map((z) => z.i);
+  const n = Math.min(reach.length, d < ST.n2 + 1 ? 1 : d <= ST.n3 ? 2 : d <= ST.n4 ? 3 : 4);
+  const targets = pickN(reach, n);
+  targets.forEach((zi, k) => s.fights.push(waveFight(s, zi, "wave", [], isBoss(d) && k === 0)));
+  if (isBoss(d) && !targets.length && s.fights.length) { const f = s.fights[s.fights.length - 1]; const w = waveFight(s, f.zone, "wave", [], true); f.van = w.van; f.boss = w.boss; f.name = w.name; }
+  slog(s, `Night ${d}: ${s.fights.length} attack${s.fights.length === 1 ? "" : "s"} on the city${isBoss(d) ? ", a boss leads the wave" : ""}.`);
+  s.cur = -1; siegeNext(s);
+}
+function siegeGame(s       , f        )    {
+  const z = s.zones[f.zone];
+  const g = newGame({ name: z.name, deck: [], hp: szWalls(z.kind), nofat: true }, { name: f.name, deck: f.deck, hp: f.hp, ramp: f.ramp });
+  g.phase = "play"; delete g.roll; delete g.mull; g.first = "b"; g.siege = { zone: f.zone, boss: f.boss };
+  g.a.hand = z.tactics.map((c) => c.id);
+  g.a.board = z.units.map((c) => { const u = waveUnit(g, c.id); u.sid = c.sid; return u; });
+  g.b.board = f.van.map((u) => ({ ...u, uid: g.uid++, ready: false }));
+  g.log = [`${f.name} attacks ${z.name}! Hold the walls (♥ ${szWalls(z.kind)}) and break the warband (♥ ${f.hp}).`];
+  startTurn(g, "b");
+  return g;
+}
+// Move to the next fight; fights with nobody defending resolve on their own.
+function siegeNext(s       ) {
+  s.g = null;
+  while (s.phase === "night") {
+    s.cur++;
+    if (s.cur >= s.fights.length) { siegeDawn(s); return; }
+    const f = s.fights[s.cur]; const z = s.zones[f.zone];
+    if (z.st === "lost") { f.done = true; f.auto = true; f.note = `${z.name} already fell.`; continue; }
+    if (!z.units.length && !z.tactics.length) { f.done = true; f.auto = true; siegeResolve(s, f, false, f.van.map((u) => ({ ...u })), []); continue; }
+    f.cmd = s.nextCmd % Math.max(1, s.players.length); s.nextCmd++;
+    s.g = siegeGame(s, f); return;
+  }
+}
+function siegeResolve(s       , f        , won         , foeLeft        , aliveSids          , handLeft           = []) {
+  const z = s.zones[f.zone]; f.done = true; f.won = won;
+  // garrison: the fallen go to the healing camp (or are lost for good if already wounded)
+  const fallen = z.units.filter((c) => !aliveSids.includes(c.sid));
+  z.units = z.units.filter((c) => aliveSids.includes(c.sid));
+  for (const c of fallen) { if (c.wounded) { s.stats.fallen++; s.report.push(`${CARD[c.id].name} fell again and is gone for good.`); } else { s.camp.push({ sid: c.sid, id: c.id }); s.report.push(`${CARD[c.id].name} was carried to the healing camp.`); } }
+  // tactics not played stay with the zone
+  const left = handLeft.slice(); z.tactics = z.tactics.filter((c) => { const k = left.indexOf(c.id); if (k >= 0) { left.splice(k, 1); return true; } return false; });
+  if (won) {
+    const gold = ST.win + (f.boss ? ST.boss : 0); s.gold += gold; f.gold = gold; s.stats.won++; if (f.boss) s.stats.bosses++;
+    if (z.st === "contested") { z.st = "held"; z.foe = []; s.report.push(`${z.name} retaken! +${gold} gold.`); } else s.report.push(`${z.name} held against ${f.name}. +${gold} gold.`);
+    return;
+  }
+  s.stats.lost++;
+  const occ = foeLeft.filter((u) => u.hp > 0).slice(0, BOARD_MAX).map((u) => ({ ...u, ready: false, stun: 0 }));
+  if (z.kind === "castle") { z.st = "lost"; s.phase = "lost"; s.report.push(`The castle has fallen on night ${s.day}.`); slog(s, `The castle has fallen. The city is lost.`); return; }
+  if (f.kind === "retake" || z.st === "contested") {
+    z.st = "lost"; s.stats.zones++;
+    for (const c of z.units.concat(z.tactics)) s.reserve.push(c); z.units = []; z.tactics = []; z.foe = [];
+    const b = siegeBehind(z.i);
+    s.push.push({ zone: b, units: occ });
+    s.report.push(`${z.name} is destroyed. The enemy will push into ${s.zones[b].name} next night.`);
+    return;
+  }
+  z.st = "contested"; z.foe = occ.length ? occ : [];
+  s.report.push(f.auto ? `${z.name} had no defenders. The enemy took it and must hold it one day to destroy it. Reinforce it to retake it!` : `${z.name} was overrun. The enemy holds it; reinforce it during the day to retake it before it is destroyed.`);
+}
+// Finish the current fight with the finished game.
+function siegeFinish(s0       , g   )        {
+  if (s0.phase !== "night" || !s0.g || !g.winner) return s0;
+  const s = sClone(s0); const f = s.fights[s.cur];
+  siegeResolve(s, f, g.winner === "a", g.b.board, g.a.board.filter((u) => u.sid != null && u.hp > 0).map((u) => u.sid ), g.a.hand);
+  if (s.phase === "night") siegeNext(s); else s.g = null;
+  s.seq++;
+  return s;
+}
+function siegeDawn(s       ) {
+  s.g = null;
+  if (s.day >= SIEGE_DAYS) { s.phase = "won"; slog(s, `Dawn after night ${SIEGE_DAYS}: the siege breaks. The city stands!`); return; }
+  s.day++; const inc = siegeIncome(s); s.gold += inc; s.phase = "day"; s.shop = siegeShopRoll(); s.ready = s.ready.map(() => false);
+  slog(s, `Day ${s.day}. +${inc} gold from the zones still held.${isBoss(s.day) ? " Scouts report a BOSS with tonight's wave." : ""}`);
+}
+// ---------- computer planning (sims, and the "Plan for me" helper) ----------
+const unitScore = (id        ) => { const c = CARD[id]; return (c.atk || 0) + (c.hp || 0) + (c.guard ? 2 : 0) + (c.legend ? 3 : 0) + (c.trib ? -1 : 0); };
+function siegeThreat(s       )           {
+  const t           = [];
+  for (const z of s.zones) if (z.st === "contested") t.push(z.i);
+  for (const p of s.push) if (s.zones[p.zone].st === "held") t.push(p.zone);
+  for (const z of s.zones) if (siegeReachable(s, z.i) && !t.includes(z.i)) t.push(z.i);
+  return t;
+}
+function siegeAiStep(s       , who        )       {
+  const threat = siegeThreat(s);
+  const power = (z       ) => z.units.reduce((x, c) => x + unitScore(c.id), 0) - (z.st === "contested" ? z.foe.reduce((x, u) => x + u.atk + u.hp, 0) : 0);
+  // 1) place reserve units on the weakest threatened zone, tactics on the strongest
+  const ru = s.reserve.filter((c) => CARD[c.id].kind === "unit").sort((x, y) => unitScore(y.id) - unitScore(x.id))[0];
+  if (ru) { const z = threat.map((i) => s.zones[i]).filter((z) => z.units.length < szCap(z)).sort((x, y) => power(x) - power(y))[0]; if (z) return { t: "place", sid: ru.sid, zone: z.i }; }
+  const rt = s.reserve.find((c) => CARD[c.id].kind === "spell");
+  if (rt) { const z = threat.map((i) => s.zones[i]).filter((z) => z.units.length && z.tactics.length < SZ_TAC_CAP).sort((x, y) => power(y) - power(x))[0]; if (z) return { t: "place", sid: rt.sid, zone: z.i }; }
+  // 2) buy: best value per gold among buybacks and shop units (keep a little for tactics)
+  const opts                                      = [];
+  for (const c of s.camp) if (CARD[c.id].kind === "unit") opts.push({ a: { t: "buyback", sid: c.sid }, v: unitScore(c.id) * 0.9, p: siegeBuyback(c.id) });
+  s.shop.forEach((id, i) => { if (!id) return; const c = CARD[id]; opts.push({ a: { t: "buy", i }, v: c.kind === "unit" ? unitScore(id) : 2.2, p: siegePrice(id) }); });
+  const best = opts.filter((o) => o.p <= s.gold).sort((x, y) => y.v / y.p - x.v / x.p)[0];
+  const room = threat.some((i) => s.zones[i].units.length < szCap(s.zones[i]));
+  if (best && room) return best.a;
+  return { t: "ready" };
+}
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf };
+
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, siegeGame, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
