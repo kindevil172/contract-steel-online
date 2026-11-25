@@ -1,7 +1,7 @@
 // ================= ENGINE =================
                       
                                                                         
-                                                        
+                                                                
                                                      
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
@@ -97,6 +97,8 @@ const CARDS            = [
   { id: "zack", name: "Zack, Hollow-Hearted", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "shadow", swift: true, text: "Hire: give your strongest other sellsword Deadly.", flavor: "Nothing behind the eyes. Everything on the blade." },
   { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
   { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 4, fac: "gilded", text: "Hire: heal your captain and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
+  { id: "bogleech", name: "Bog Leech", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: heal your captain 1 and gain +1 attack.", flavor: "It takes a little. It gives a little back." },
+  { id: "rotmaw", name: "Rotmaw, the Hungry Wyrm", cost: 6, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "eat", n: 1 }, text: "Each turn it eats a random ally and gains its attack and health. Fed: 2 damage to a random enemy.", flavor: "Rot never fills it. Nothing ever has." },
   { id: "slime", name: "Slime", cost: 0, kind: "unit", atk: 1, hp: 1, fac: "beast", flavor: "It was a puddle. Then it was hungry." },
   { id: "tunnelcent", name: "Tunnel Centipede", cost: 2, kind: "unit", atk: 3, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: +1 health.", flavor: "Every trench is its burrow." },
   { id: "carcass", name: "Carcass Beetle", cost: 4, kind: "unit", atk: 2, hp: 5, fac: "beast", guard: true, trib: { k: "gold", n: 2 }, text: "Fed: +1/+1.", flavor: "Wears last week's casualties as armor." },
@@ -126,7 +128,7 @@ const RARITY                         = {
   volley: "rare", warchief: "rare", ravager: "rare",
   captain: "rare", bastion: "rare", ogre: "rare", bounty: "rare", battlepay: "rare", firebomb: "rare", bloodmoney: "rare", sapper: "rare",
   poisoner: "rare", spymaster: "rare", priest: "rare", golem: "rare", shaman: "rare", gorger: "rare", troll: "rare", bloodfeast: "rare",
-  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic", graci: "epic",
+  nightblade: "epic", battlemage: "epic", legion: "epic", buyout: "epic", jace: "epic", attorin: "epic", zack: "epic", jordan: "epic", behemoth: "epic", thousandleg: "epic", graci: "epic", rotmaw: "epic",
   slime: "common", tunnelcent: "common", carcass: "common", boar: "common", scavworg: "common", bear: "common", mossmen: "common", giantcent: "common",
   giantslime: "rare", madcurse: "rare", gorge: "rare",
   warlord: "legendary", dorn: "legendary", widow: "legendary", selene: "legendary", warboss: "legendary",
@@ -153,10 +155,10 @@ const RAGE_HEAL                         = { jace: 2 }; // Rage variant: heals in
 const RAGE = ["berserker", "ogre", "skirmisher", "reaver", "juggernaut"], FEAST = ["bloodtusk", "brute", "ravager"];
 const isDeadly = (u      ) => !!u.deadly || !!CARD[u.id].deadly;
 // ---------- Beasts: Tribute ----------
-const tribText = (t      ) => t.k === "gold" ? `Tribute ${t.n} gold` : t.k === "discard" ? `Tribute: discard ${t.n}` : `Tribute: lose ${t.n} health`;
+const tribText = (t      ) => t.k === "eat" ? "Tribute: eats an ally" : t.k === "gold" ? `Tribute ${t.n} gold` : t.k === "discard" ? `Tribute: discard ${t.n}` : `Tribute: lose ${t.n} health`;
 const tribPay = (t      ) => t.k === "gold" ? `Pay ${t.n} gold` : t.k === "discard" ? `Discard ${t.n} card${t.n === 1 ? "" : "s"}` : `Lose ${t.n} health`;
-function canTribute(p        , t      )          { return t.k === "gold" ? p.gold >= t.n : t.k === "discard" ? p.hand.length >= t.n : p.hp > t.n; }
-const FED_VALUE                         = { tunnelcent: 1, carcass: 2, scavworg: 2, bear: 3, mossmen: 2, behemoth: 5 };
+function canTribute(p        , t      )          { return t.k === "eat" ? p.board.filter((x) => x.hp > 0).length >= 2 : t.k === "gold" ? p.gold >= t.n : t.k === "discard" ? p.hand.length >= t.n : p.hp > t.n; }
+const FED_VALUE                         = { tunnelcent: 1, carcass: 2, scavworg: 2, bear: 3, mossmen: 2, behemoth: 5, bogleech: 2 };
 // Unpaid: the beast turns on its own side. It fights your lowest-health other sellsword, or hits your captain if it is alone.
 function rampTarget(p        , u      )                   { return p.board.filter((x) => x.uid !== u.uid && x.hp > 0).sort((x, y) => x.hp - y.hp || value(x) - value(y))[0]; }
 function payTribute(g   , s      , uid        , pay         ) {
@@ -164,15 +166,22 @@ function payTribute(g   , s      , uid        , pay         ) {
   const u = p.board.find((x) => x.uid === uid); if (!u || !u.trib || u.hp <= 0) return;
   const t = u.trib, nm = CARD[u.id].name;
   if (pay && canTribute(p, t)) {
-    if (t.k === "gold") p.gold -= t.n;
+    if (t.k === "eat") {
+      // Rotmaw's Tribute: it eats a random other friendly sellsword (that unit dies; Last Pay still triggers) and gains its attack and current health.
+      const os = p.board.filter((x) => x.uid !== u.uid && x.hp > 0); const v = os[Math.floor(Math.random() * os.length)];
+      const ga = v.atk, gh = v.hp; u.atk += ga; u.hp += gh; u.maxHp += gh; v.hp = 0;
+      push(g, `${nm} ate ${CARD[v.id].name} (+${ga}/+${gh})`);
+    } else if (t.k === "gold") p.gold -= t.n;
     else if (t.k === "hp") p.hp -= t.n;
     else for (let i = 0; i < t.n; i++) { let k = 0; p.hand.forEach((id, j) => { if (CARD[id].cost < CARD[p.hand[k]].cost) k = j; }); const d = p.hand.splice(k, 1)[0]; if (p.recycle && p.grave) p.grave.push(d); push(g, `${p.name} discarded ${CARD[d].name} to feed ${nm}`); }
-    push(g, `${p.name} paid ${nm}'s Tribute (${t.k === "gold" ? `${t.n} gold` : t.k === "hp" ? `${t.n} health` : `${t.n} card`})`);
+    if (t.k !== "eat") push(g, `${p.name} paid ${nm}'s Tribute (${t.k === "gold" ? `${t.n} gold` : t.k === "hp" ? `${t.n} health` : `${t.n} card`})`);
     if (u.id === "tunnelcent") { u.hp++; u.maxHp++; }
     if (u.id === "carcass" || u.id === "mossmen") { u.atk++; u.hp++; u.maxHp++; }
     if (u.id === "bear") { u.atk++; u.hp += 2; u.maxHp += 2; }
     if (u.id === "behemoth") { u.guard = true; u.atk += 2; u.hp += 2; u.maxHp += 2; }
     if (u.id === "scavworg") draw(g, s);
+    if (u.id === "bogleech") { heal(p, 1); u.atk++; }
+    if (u.id === "rotmaw") { const es = g[other(s)].board.filter((x) => x.hp > 0 && !x.hidden); const t = es[Math.floor(Math.random() * es.length)]; if (t) { t.hp -= 2; push(g, `${nm} spat rot at ${CARD[t.id].name} for 2`); } }
     return;
   }
   u.ready = false; u.hidden = false;
@@ -193,7 +202,10 @@ function startTurn(g   , s      ) {
   p.maxGold = Math.min(MAX_GOLD, p.maxGold + (p.maxGold === 0 ? 2 : 1)); p.gold = p.maxGold;
   for (const u of p.board) { u.ready = !u.stun; if (u.id === "troll") u.hp = Math.max(u.hp, u.maxHp); }
   draw(g, s);
-  p.due = p.board.filter((u) => !!u.trib).map((u) => u.uid);
+  p.due = p.board.filter((u) => !!u.trib && u.trib.k !== "eat").map((u) => u.uid);
+  // Automatic Tribute (Rotmaw): resolved right away, no choice.
+  for (const u of p.board.slice()) if (u.trib && u.trib.k === "eat" && u.hp > 0) payTribute(g, s, u.uid, true);
+  cleanup(g);
   checkWin(g);
 }
 const OPEN_HAND = 4;
