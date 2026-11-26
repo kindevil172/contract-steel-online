@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { initAccounts, handleApi, userIdFor, recordResult, accountsUp } from "./accounts.js";
-import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, newSiege, siegeDo, siegeFinish, siegeRerollIn } from "./engine.js";
+import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, viewFor, shadeUnit, newSiege, siegeDo, siegeFinish, siegeRerollIn } from "./engine.js";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(DIR, "public");
@@ -36,7 +36,7 @@ function newCode() { for (;;) { let c = ""; for (let i = 0; i < 5; i++) c += ALP
 const send = (ws, m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
 // Accounts: a portrait is any card id; the session token (m.auth) is resolved in the background so a slow or
 // unreachable database never holds up a room. Results are recorded only for players whose token resolved.
-const picOk = (id) => typeof id === "string" && id.length < 40 && !!CARD[id];
+const picOk = (id) => typeof id === "string" && id.length < 40 && !!CARD[id] && id !== "shade";
 function bindUser(p, m) {
   if (picOk(m.pic)) p.pic = m.pic;
   if (m.auth && typeof m.auth === "string") userIdFor(m.auth).then((uid) => { if (uid) p.uid = uid; }).catch(() => {});
@@ -136,7 +136,7 @@ function finishDraft(room) {
 }
 
 function redact(g, side) {
-  const v = JSON.parse(JSON.stringify(g));
+  const v = viewFor(g, side); // the other side's Hidden sellswords are sent as blank face-down cards
   const o = side === "a" ? "b" : "a";
   v[o].hand = v[o].hand.map(() => "?");
   v.a.deck = v.a.deck.map(() => "?");
@@ -198,7 +198,10 @@ const SIEGE = { aiMs: Number(process.env.SIEGE_AI_MS) || 850, finMs: Number(proc
 const sHere = (q) => !!(q && q.ws);
 function siegeView(room, p) {
   const s = room.siege; const v = JSON.parse(JSON.stringify(s));
-  if (v.g) { v.g.b.hand = v.g.b.hand.map(() => "?"); v.g.b.deck = v.g.b.deck.map(() => "?"); }
+  if (v.g) { v.g = viewFor(v.g, "a"); v.g.b.hand = v.g.b.hand.map(() => "?"); v.g.b.deck = v.g.b.deck.map(() => "?"); }
+  // Hidden attackers stay face down everywhere the players can see them (occupiers, queued vanguards)
+  if (v.zones) for (const z of v.zones) if (z.foe) z.foe = z.foe.map((u) => (u.hidden ? shadeUnit(u) : u));
+  if (v.fights) for (const f of v.fights) if (f.van) f.van = f.van.map((u) => (u.hidden ? shadeUnit(u) : u));
   if (v.fights) for (const f of v.fights) f.deck = f.deck.map(() => "?");
   const peer = room.players.find((q) => q !== p);
   return { t: "siege", code: room.code, me: p.idx, n: room.seq, s: v, peer: sHere(peer), names: room.players.map((q) => q.name), pics: room.players.map((q) => q.pic || null) };

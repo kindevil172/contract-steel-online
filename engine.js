@@ -7,7 +7,7 @@
                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                                                
                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                                                                                                                                                                     
                                                    
                                                                                                                                                                                                                                                                           
 
@@ -50,7 +50,7 @@ const CARDS            = [
   { id: "dorn", name: "Marshal Dorn, Iron Wall", cost: 7, kind: "unit", atk: 5, hp: 9, fac: "iron", guard: true, legend: true, isNew: true, text: "Hire: your other sellswords gain Guard and +2 health.", flavor: "Forty years. One step back, never." },
   { id: "shieldwall", name: "Shield Wall", cost: 2, kind: "spell", fac: "iron", target: "none", isNew: true, text: "Your sellswords get +2 health.", flavor: "Lock shields. Hold the price." },
   { id: "poisoner", name: "Venom Poisoner", cost: 3, kind: "unit", atk: 1, hp: 3, fac: "shadow", deadly: true, isNew: true, flavor: "One drop, one fee." },
-  { id: "infiltrator", name: "Masked Infiltrator", cost: 2, kind: "unit", atk: 2, hp: 2, fac: "shadow", hidden: true, isNew: true, flavor: "Wore your colors to dinner." },
+  { id: "infiltrator", name: "Masked Infiltrator", cost: 2, kind: "unit", atk: 2, hp: 3, fac: "shadow", hidden: true, isNew: true, flavor: "Wore your colors to dinner." },
   { id: "knife", name: "Knife in the Dark", cost: 2, kind: "spell", fac: "shadow", target: "enemyUnit", isNew: true, text: "Deal 3 damage to an enemy sellsword.", flavor: "Nobody saw the thrower." },
   { id: "spymaster", name: "Guild Spymaster", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "shadow", hidden: true, isNew: true, text: "Hire: draw a card.", flavor: "Knows your plan. Sells it twice." },
   { id: "widow", name: "The Faceless Widow", cost: 6, kind: "unit", atk: 4, hp: 5, fac: "shadow", hidden: true, deadly: true, legend: true, isNew: true, flavor: "Every contract ends in mourning." },
@@ -59,6 +59,7 @@ const CARDS            = [
   { id: "golem", name: "Contract Golem", cost: 5, kind: "unit", atk: 5, hp: 6, fac: "gilded", isNew: true, flavor: "Never sleeps, never haggles." },
   { id: "buyout", name: "Hostile Buyout", cost: 5, kind: "spell", fac: "gilded", target: "enemyUnit", isNew: true, text: "Take control of an enemy sellsword with 3 or less attack.", flavor: "Loyalty has a price. Pay it." },
   { id: "selene", name: "Selene Goldhand", cost: 5, kind: "unit", atk: 3, hp: 5, fac: "gilded", drain: true, legend: true, isNew: true, text: "Hire: draw 2 cards.", flavor: "Audits kingdoms. Collects in blood." },
+  { id: "shade", name: "Hidden sellsword", cost: 0, kind: "unit", atk: 0, hp: 1, fac: "shadow", hidden: true, token: true, text: "Face down. Only its owner knows what it is, until it attacks.", flavor: "Something waits in the dark." },
   { id: "grunt", name: "Goblin Grunt", cost: 1, kind: "unit", atk: 1, hp: 1, fac: "horde", token: true, flavor: "Cheap. Plentiful. Mostly brave." },
   { id: "rabble", name: "Goblin Rabble", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "horde", isNew: true, text: "Hire: summon a 1/1 Goblin Grunt.", flavor: "Paid per head. Many heads." },
   { id: "kobold", name: "Kobold Tunneler", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "horde", isNew: true, text: "Last Pay: 1 damage to the enemy captain.", flavor: "Digs in, blows up, bills you." },
@@ -147,6 +148,18 @@ const COLLECTION = CARDS.filter((c) => !c.token);
 function shuffle   (a     )      { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const x = r[i]; r[i] = r[j]; r[j] = x; } return r; }
 const other = (s      )       => (s === "a" ? "b" : "a");
 function push(g   , m        ) { g.log = [m].concat(g.log).slice(0, 8); }
+// Hidden sellswords are face down: the shared war ledger never names them until they attack.
+const unitName = (u      , cap = false) => (u.hidden ? (cap ? "A Hidden sellsword" : "a Hidden sellsword") : CARD[u.id].name);
+// What one side is allowed to see: the other side's Hidden sellswords become a blank face-down card (no id, stats, text or Tribute).
+function shadeUnit(u      )       { return { uid: u.uid, id: "shade", atk: 0, hp: 1, maxHp: 1, ready: false, guard: false, hidden: true }; }
+function viewFor(g   , side      )    {
+  const o = other(side); const v    = JSON.parse(JSON.stringify(g));
+  const hid = new Set(v[o].board.filter((u) => u.hidden).map((u) => u.uid));
+  v[o].board = v[o].board.map((u) => (u.hidden ? shadeUnit(u) : u));
+  if (v[o].due) v[o].due = v[o].due.filter((uid) => !hid.has(uid));
+  v.plays = (v.plays || []).map((x) => (x.hid && x.side === o ? { side: x.side, id: "shade", n: x.n, hid: true } : x));
+  return v;
+}
 function draw(g   , s      , n = 1) {
   const p = g[s];
   for (let i = 0; i < n; i++) {
@@ -170,17 +183,17 @@ function rampTarget(p        , u      )                   { return p.board.filte
 function payTribute(g   , s      , uid        , pay         ) {
   const p = g[s]; p.due = (p.due || []).filter((x) => x !== uid);
   const u = p.board.find((x) => x.uid === uid); if (!u || !u.trib || u.hp <= 0) return;
-  const t = u.trib, nm = CARD[u.id].name;
+  const t = u.trib, nm = unitName(u);
   if (pay && canTribute(p, t)) {
     if (t.k === "eat") {
       // Rotmaw's Tribute: it eats a random other friendly sellsword (that unit dies; Last Pay still triggers) and gains its attack and current health.
       const os = p.board.filter((x) => x.uid !== u.uid && x.hp > 0); const v = os[Math.floor(Math.random() * os.length)];
       const ga = v.atk, gh = v.hp; u.atk += ga; u.hp += gh; u.maxHp += gh; v.hp = 0;
-      push(g, `${nm} ate ${CARD[v.id].name} (+${ga}/+${gh})`);
+      push(g, `${nm} ate ${unitName(v)} (+${ga}/+${gh})`);
     } else if (t.k === "gold") p.gold -= t.n;
     else if (t.k === "hp") p.hp -= t.n;
     else for (let i = 0; i < t.n; i++) { let k = 0; p.hand.forEach((id, j) => { if (CARD[id].cost < CARD[p.hand[k]].cost) k = j; }); const d = p.hand.splice(k, 1)[0]; if (p.recycle && p.grave) p.grave.push(d); push(g, `${p.name} discarded ${CARD[d].name} to feed ${nm}`); }
-    if (t.k !== "eat") push(g, `${p.name} paid ${nm}'s Tribute (${t.k === "gold" ? `${t.n} gold` : t.k === "hp" ? `${t.n} health` : `${t.n} card`})`);
+    if (t.k !== "eat" && !u.hidden) push(g, `${p.name} paid ${nm}'s Tribute (${t.k === "gold" ? `${t.n} gold` : t.k === "hp" ? `${t.n} health` : `${t.n} card`})`);
     if (u.id === "tunnelcent") { u.hp++; u.maxHp++; }
     if (u.id === "carcass" || u.id === "mossmen") { u.atk++; u.hp++; u.maxHp++; }
     if (u.id === "bear") { u.atk++; u.hp += 2; u.maxHp += 2; }
@@ -190,15 +203,15 @@ function payTribute(g   , s      , uid        , pay         ) {
     if (u.id === "rotmaw") { const es = g[other(s)].board.filter((x) => x.hp > 0 && !x.hidden); const t = es[Math.floor(Math.random() * es.length)]; if (t) { t.hp -= 2; push(g, `${nm} spat rot at ${CARD[t.id].name} for 2`); } }
     return;
   }
-  u.ready = false; u.hidden = false;
+  const nm2 = CARD[u.id].name; u.ready = false; u.hidden = false;
   const v = rampTarget(p, u);
   if (v) {
     const toV = u.atk, toU = v.atk;
     v.hp -= toV; u.hp -= toU;
     if (isDeadly(u) && toV > 0) v.hp = Math.min(v.hp, 0);
     if (isDeadly(v) && toU > 0) u.hp = Math.min(u.hp, 0);
-    push(g, `Unfed, ${nm} turned on ${CARD[v.id].name}`);
-  } else { p.hp -= u.atk; push(g, `Unfed, ${nm} mauled ${p.name} for ${u.atk}`); }
+    push(g, `Unfed, ${nm2} turned on ${unitName(v)}`);
+  } else { p.hp -= u.atk; push(g, `Unfed, ${nm2} mauled ${p.name} for ${u.atk}`); }
 }
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
@@ -299,7 +312,7 @@ function cleanup(g   ) {
       any = true;
       g[s].board = g[s].board.filter((u) => u.hp > 0);
       for (const d of dead) {
-        push(g, `${CARD[d.id].name} fell`);
+        push(g, `${unitName(d, true)} fell`);
         const gv = g[s].grave; if (g[s].recycle && gv && !CARD[d.id].token) gv.push(d.id);
         if (d.id === "moneylender" || d.id === "looter") draw(g, s);
         if (d.id === "squire") heal(g[s], 3);
@@ -350,14 +363,14 @@ function enterFx(g   , s      , nu      , others        ) {
       if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
       if (c.id === "clerk") p.gold += 1;
       if (c.id === "graci") { heal(p, 2); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
-      if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
+      if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${unitName(t, true)} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
       if (c.id === "hollowqueen") {
         // Devours the enemy sellsword with the highest attack + current health (random tiebreak, Hidden included); it is destroyed and she gains its attack and current health.
         const es = e.board.filter((u) => u.hp > 0);
         if (es.length) { const top = Math.max(...es.map((u) => u.atk + u.hp)); const cs = es.filter((u) => u.atk + u.hp === top); const v = cs[Math.floor(Math.random() * cs.length)];
-          const ga = v.atk, gh = v.hp; nu.atk += ga; nu.hp += gh; nu.maxHp += gh; v.hp = 0; push(g, `Hollow Queen devoured ${CARD[v.id].name} (+${ga}/+${gh})`); }
+          const ga = v.atk, gh = v.hp; nu.atk += ga; nu.hp += gh; nu.maxHp += gh; v.hp = 0; push(g, `Hollow Queen devoured ${unitName(v)} (+${ga}/+${gh})`); }
       }
 }
 function apply(g0   , a        )    {
@@ -390,8 +403,8 @@ function apply(g0   , a        )    {
     if (p.gold < cost) return g0;
     p.hand.splice(a.idx, 1); p.gold -= cost;
     if (p.recycle && p.grave && c.kind === "spell" && !c.token) p.grave.push(c.id);
-    push(g, `${p.name} ${c.kind === "unit" ? "hired" : "played"} ${c.name}`);
-    g.plays = (g.plays || []).concat([{ side: s, id: c.id, n: g.uid++ }]).slice(-6);
+    push(g, `${p.name} ${c.kind === "unit" ? "hired" : "played"} ${c.kind === "unit" && c.hidden ? "a Hidden sellsword" : c.name}`);
+    g.plays = (g.plays || []).concat([{ side: s, id: c.id, n: g.uid++, ...(c.kind === "unit" && c.hidden ? { hid: true } : {}) }]).slice(-6);
     if (c.kind === "unit") {
       const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) };
       const others = p.board.slice();
@@ -402,12 +415,12 @@ function apply(g0   , a        )    {
       if (c.id === "warcall") summon(g, s, 2);
       if (c.id === "bloodfeast" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; draw(g, s, 2); }
       if (c.id === "ambush" && tg) dmgTarget(g, tg, 2);
-      if (c.id === "bloodblade" && tg) { const u = g[tg.side].board.find((x) => x.uid === tg.uid); if (u) { u.hp -= 2; if (u.hp > 0) { u.atk += 2; push(g, `${CARD[u.id].name} took 2 and gained +2 attack`); } } }
+      if (c.id === "bloodblade" && tg) { const u = g[tg.side].board.find((x) => x.uid === tg.uid); if (u) { u.hp -= 2; if (u.hp > 0) { u.atk += 2; push(g, `${unitName(u, true)} took 2 and gained +2 attack`); } } }
       if (c.id === "bounty" && tg) dmgTarget(g, tg, 4);
       if (c.id === "knife" && tg) dmgTarget(g, tg, 3);
       if (c.id === "dart" && tg) { dmgTarget(g, tg, 1); draw(g, s); }
       if (c.id === "madcurse" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) { u.trib = { k: "gold", n: 3 }; const st = stunUnit(g, u); push(g, `${CARD[u.id].name} is cursed: Tribute 3 gold${st ? ", and Stunned" : ""}`); } }
-      if (c.id === "gorge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); const v = u && p.board.filter((x) => x.uid !== u.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (u && v) { u.atk += v.atk; u.hp += Math.max(0, v.hp); u.maxHp += Math.max(0, v.hp); v.hp = 0; push(g, `${CARD[u.id].name} devoured ${CARD[v.id].name}`); } }
+      if (c.id === "gorge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); const v = u && p.board.filter((x) => x.uid !== u.uid).sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (u && v) { u.atk += v.atk; u.hp += Math.max(0, v.hp); u.maxHp += Math.max(0, v.hp); v.hp = 0; push(g, `${unitName(u, true)} devoured ${unitName(v)}`); } }
       if (c.id === "marked" && tg) { const u = e.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; }
       if (c.id === "volley") for (const u of e.board) u.hp -= 2;
       if (c.id === "charge" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) { u.atk += 2; u.ready = true; } }
@@ -440,7 +453,10 @@ function apply(g0   , a        )    {
       const hitD = () => { d.hp -= toD; if (isDeadly(u) && toD > 0) d.hp = Math.min(d.hp, 0); if (uc.drain) heal(p, toD); };
       const hitU = () => { u.hp -= toU; if (isDeadly(d) && toU > 0) u.hp = Math.min(u.hp, 0); if (dc.drain) heal(e, toU); };
       // First Strike: strikes before the other side; if that kills, no damage comes back. Both or neither: damage is simultaneous.
-      if (uc.first && !dc.first) { hitD(); if (d.hp > 0) hitU(); }
+      // Ambush from Hidden: the attack that reveals a Hidden sellsword takes no damage back, unless the defender has First Strike
+      // (then the fight resolves exactly as normal: the defender strikes first and can kill the attacker before it hits).
+      if (wasHidden && !dc.first) hitD();
+      else if (uc.first && !dc.first) { hitD(); if (d.hp > 0) hitU(); }
       else if (dc.first && !uc.first) { hitU(); if (u.hp > 0) hitD(); }
       else { hitD(); hitU(); }
       if (RAGE.includes(u.id) && u.hp > 0) u.atk++;
@@ -541,7 +557,7 @@ function aiAction(g   )         {
       for (const r of ready) { const k = tg.filter((d) => isDeadly(r) || d.hp <= r.atk).sort((x, y) => value(y) - value(x))[0]; if (k) return { t: "attack", uid: r.uid, target: { side: o, uid: k.uid } }; }
       const focus = tg.filter((d) => d.hp <= facePower).sort((x, y) => value(y) - value(x))[0];
       if (focus) { const r = ready.slice().sort((x, y) => (y.hp > focus.atk ? 1 : 0) - (x.hp > focus.atk ? 1 : 0) || y.atk - x.atk)[0]; return { t: "attack", uid: r.uid, target: { side: o, uid: focus.uid } }; }
-      for (const r of ready) { const sf = tg.filter((d) => d.atk < r.hp).sort((x, y) => x.hp - y.hp)[0]; if (sf) return { t: "attack", uid: r.uid, target: { side: o, uid: sf.uid } }; }
+      for (const r of ready) { const sf = tg.filter((d) => d.atk < r.hp || (r.hidden && !CARD[d.id].first)).sort((x, y) => x.hp - y.hp)[0]; if (sf) return { t: "attack", uid: r.uid, target: { side: o, uid: sf.uid } }; }
       // nothing clean: wear down the biggest threat before it reaches the walls again
       const big = tg.slice().sort((x, y) => y.atk - x.atk || x.hp - y.hp)[0];
       if (big) { const r = ready.slice().sort((x, y) => y.atk - x.atk)[0]; return { t: "attack", uid: r.uid, target: { side: o, uid: big.uid } }; }
@@ -549,7 +565,7 @@ function aiAction(g   )         {
     }
     if (facePower >= e.hp) return { t: "attack", uid: u.uid, target: { side: o, uid: "hero" } };
     const dl = isDeadly(u), fu = !!CARD[u.id].first;
-    const trades = vis.filter((d) => { const fd = !!CARD[d.id].first; const kills = dl || d.hp <= u.atk; if (fd && !fu && d.atk >= u.hp) return false; return kills && (d.atk < u.hp || (fu && !fd) || value(d) > value(u) + 1) && !(isDeadly(d) && u.atk < d.hp && value(u) > 4 && !(fu && !fd)); }).sort((x, y) => value(y) - value(x));
+    const trades = vis.filter((d) => { const fd = !!CARD[d.id].first; const kills = dl || d.hp <= u.atk; if (u.hidden && !fd) return kills; if (fd && !fu && d.atk >= u.hp) return false; return kills && (d.atk < u.hp || (fu && !fd) || value(d) > value(u) + 1) && !(isDeadly(d) && u.atk < d.hp && value(u) > 4 && !(fu && !fd)); }).sort((x, y) => value(y) - value(x));
     if (trades.length) return { t: "attack", uid: u.uid, target: { side: o, uid: trades[0].uid } };
     return { t: "attack", uid: u.uid, target: { side: o, uid: "hero" } };
   }
@@ -760,8 +776,8 @@ function siegeGame(s       , f        )    {
 // (both armies are already on the field, so a defender's Hollow Queen or Crossbow can hit the wave), then the wave's
 // fresh units in the order they arrive (boss first). Occupiers and breach columns already entered on an earlier night.
 function siegeMuster(g   , waveFx         ) {
-  for (const u of g.a.board.slice()) if (u.hp > 0 && g.a.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${CARD[u.id].name} takes the walls: Hire effect`); enterFx(g, "a", u, g.a.board.filter((x) => x !== u && x.hp > 0)); }
-  for (const u of g.b.board.slice()) { const fresh = !!u.ent; delete u.ent; if (waveFx && fresh && u.hp > 0 && g.b.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${CARD[u.id].name} charges in: Hire effect`); enterFx(g, "b", u, g.b.board.filter((x) => x !== u && x.hp > 0)); } }
+  for (const u of g.a.board.slice()) if (u.hp > 0 && g.a.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${unitName(u, true)} takes the walls: Hire effect`); enterFx(g, "a", u, g.a.board.filter((x) => x !== u && x.hp > 0)); }
+  for (const u of g.b.board.slice()) { const fresh = !!u.ent; delete u.ent; if (waveFx && fresh && u.hp > 0 && g.b.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${unitName(u, true)} charges in: Hire effect`); enterFx(g, "b", u, g.b.board.filter((x) => x !== u && x.hp > 0)); } }
   cleanup(g);
 }
 // Move to the next fight; fights with nobody defending resolve on their own.
@@ -853,4 +869,4 @@ function siegeAiStep(s       , who        )       {
 }
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, unitName, shadeUnit, viewFor, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
