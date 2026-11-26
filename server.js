@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, newSiege, siegeDo, siegeFinish } from "./engine.js";
+import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, newSiege, siegeDo, siegeFinish, siegeRerollIn } from "./engine.js";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUB = path.join(DIR, "public");
@@ -225,6 +225,9 @@ function handleSiege(ws, room, p, m) {
     let n = siegeDo(s, a, p.idx);
     // Ready with the other defender offline ends the day for both.
     if (a.t === "ready" && a.on && n !== s && n.phase === "day") { const peer = room.players.find((q) => q !== p); if (peer && !sHere(peer)) n = siegeDo(n, { t: "ready", on: true }, peer.idx); }
+    const tiredC = a.t === "place" ? s.reserve.find((c) => c.sid === a.sid && c.tired === s.day) : null;
+    if (n === s && a.t === "reroll" && siegeRerollIn(s) > 0) { send(ws, { t: "error", msg: `New market offers again in ${siegeRerollIn(s)} day${siegeRerollIn(s) === 1 ? "" : "s"}.` }); siegeBroadcast(room); return true; }
+    if (n === s && tiredC) { send(ws, { t: "error", msg: "That unit is exhausted until tomorrow." }); siegeBroadcast(room); return true; }
     if (n === s) { send(ws, { t: "error", msg: a.t === "buy" || a.t === "buyback" || a.t === "reroll" ? "Not enough gold." : a.t === "place" ? "That zone can't take it (full or destroyed)." : "That isn't allowed right now." }); siegeBroadcast(room); return true; }
     room.siege = n; siegeBroadcast(room); return true;
   }

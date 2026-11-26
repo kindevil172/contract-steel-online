@@ -7,7 +7,7 @@
                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                                 
                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                                                                                     
+                                                                                                                                                                                                                                                                                                                                                                                      
                                                    
                                                                                                                                                                                                                                                                           
 
@@ -204,8 +204,8 @@ function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
 function checkWin(g   ) {
   if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b";
-  // Siege: the wave breaks when it has nothing left to send, and withdraws at dawn after SIEGE_ROUNDS rounds.
-  if (!g.winner && g.siege) { const b = g.b; if (!b.board.some((u) => u.hp > 0) && !b.deck.length && !b.hand.some((id) => CARD[id].kind === "unit")) g.winner = "a"; else if (g.round > SIEGE_ROUNDS) g.winner = "a"; }
+  // Siege: the wave is beaten only when every unit it brought is gone (field, hand and deck). Safety valve: after SIEGE_STALL rounds it withdraws.
+  if (!g.winner && g.siege) { const b = g.b; if (!b.board.some((u) => u.hp > 0) && !b.deck.length && !b.hand.some((id) => CARD[id].kind === "unit")) g.winner = "a"; else if (g.round > SIEGE_STALL) { g.winner = "a"; g.siege.stall = true; } }
 }
 function startTurn(g   , s      ) {
   g.turn = s; const p = g[s];
@@ -269,7 +269,7 @@ function hasGuard(p        ) { return p.board.some((u) => u.guard && !u.hidden &
 function canAttackTarget(g   , s      , t        )          {
   const e = g[other(s)];
   if (t.side !== other(s)) return false;
-  if (t.uid === "hero") return !hasGuard(e);
+  if (t.uid === "hero") return !hasGuard(e) && !(g.siege && t.side === "b");
   const u = e.board.find((x) => x.uid === t.uid);
   if (!u || u.hidden) return false;
   return !hasGuard(e) || (u.guard && !u.stun);
@@ -280,7 +280,7 @@ function spellTargetOk(g   , s      , c         , t                    )        
   if (c.target === "friend") return t.side === s && t.uid !== "hero" && g[s].board.some((u) => u.uid === t.uid);
   if (c.target === "unit") { if (t.uid === "hero") return false; const u = g[t.side].board.find((x) => x.uid === t.uid); return !!u && u.hp > 0 && (t.side === s || !u.hidden); }
   if (t.side !== other(s)) return false;
-  if (t.uid === "hero") return c.target === "enemy";
+  if (t.uid === "hero") return c.target === "enemy" && !(g.siege && t.side === "b");
   const u = g[t.side].board.find((x) => x.uid === t.uid);
   if (!u || u.hidden) return false;
   if (c.id === "buyout") return u.atk <= 3;
@@ -467,6 +467,7 @@ function aiAction(g   )         {
   if (g.phase === "roll" && g.roll) return { t: "first", side: g.roll.winner, first: true }; // going first wins ~70% in sims
   if (g.phase === "mull" && g.mull) { const ms       = g.mull.a < 0 ? "a" : "b"; return { t: "mull", side: ms, idx: aiMulligan(g, ms) }; }
   const s = g.turn, o = other(s), p = g[s], e = g[o];
+  const heroOk = !(g.siege && o === "b"); // siege waves have no captain to hit
   if (p.due && p.due.length) { const u = p.board.find((x) => x.uid === p.due [0]); return { t: "trib", uid: p.due[0], pay: !!u && tribWise(g, s, u) }; }
   const ready = p.board.filter((u) => u.ready && !u.stun);
   const vis = e.board.filter((u) => !u.hidden);
@@ -514,10 +515,10 @@ function aiAction(g   )         {
     }
     if (c.id === "ambush" || c.id === "bounty") {
       const n = c.id === "ambush" ? 2 : 4;
-      if (e.hp <= n) return { t: "play", idx, target: { side: o, uid: "hero" } };
+      if (heroOk && e.hp <= n) return { t: "play", idx, target: { side: o, uid: "hero" } };
       const kill = vis.filter((u) => u.hp <= n).sort((x, y) => value(y) - value(x))[0];
       if (kill && value(kill) >= n + 1) return { t: "play", idx, target: { side: o, uid: kill.uid } };
-      if (e.hp <= 6) return { t: "play", idx, target: { side: o, uid: "hero" } };
+      if (heroOk && e.hp <= 6) return { t: "play", idx, target: { side: o, uid: "hero" } };
     }
   }
   if (ready.length) {
@@ -527,6 +528,18 @@ function aiAction(g   )         {
     if (guards.length) {
       const g1 = isDeadly(u) ? guards.slice().sort((x, y) => value(y) - value(x))[0] : guards.slice().sort((x, y) => x.hp - y.hp)[0];
       return { t: "attack", uid: u.uid, target: { side: o, uid: g1.uid } };
+    }
+    if (!heroOk) {
+      // no captain to hit: kill what we can, focus fire on what we can kill together, else take safe trades
+      const tg = vis.filter((d) => canAttackTarget(g, s, { side: o, uid: d.uid }));
+      for (const r of ready) { const k = tg.filter((d) => isDeadly(r) || d.hp <= r.atk).sort((x, y) => value(y) - value(x))[0]; if (k) return { t: "attack", uid: r.uid, target: { side: o, uid: k.uid } }; }
+      const focus = tg.filter((d) => d.hp <= facePower).sort((x, y) => value(y) - value(x))[0];
+      if (focus) { const r = ready.slice().sort((x, y) => (y.hp > focus.atk ? 1 : 0) - (x.hp > focus.atk ? 1 : 0) || y.atk - x.atk)[0]; return { t: "attack", uid: r.uid, target: { side: o, uid: focus.uid } }; }
+      for (const r of ready) { const sf = tg.filter((d) => d.atk < r.hp).sort((x, y) => x.hp - y.hp)[0]; if (sf) return { t: "attack", uid: r.uid, target: { side: o, uid: sf.uid } }; }
+      // nothing clean: wear down the biggest threat before it reaches the walls again
+      const big = tg.slice().sort((x, y) => y.atk - x.atk || x.hp - y.hp)[0];
+      if (big) { const r = ready.slice().sort((x, y) => y.atk - x.atk)[0]; return { t: "attack", uid: r.uid, target: { side: o, uid: big.uid } }; }
+      return { t: "end" };
     }
     if (facePower >= e.hp) return { t: "attack", uid: u.uid, target: { side: o, uid: "hero" } };
     const dl = isDeadly(u), fu = !!CARD[u.id].first;
@@ -571,18 +584,20 @@ const countOf = (cards          , id        ) => cards.filter((c) => c === id).l
 // Co-op last stand: a walled city with 4 outer gates, 4 inner wards and the castle. Days: shared gold buys cards and garrisons zones.
 // Nights: waves hit reachable zones; each fight uses the normal battle rules (garrison already on the field, the zone's walls are the captain).
                                            
-                                                                            
+                                                                                            
                                                                                                                                             
-                                                                                                                                                                                                                                                  
+                                                                                                                                                                                                                                                                              
                  
                                                                                                                                                                   
                                                                                                                                                             
                                                                                                                     
+                                                    
  
                                                                                                                                                                                                  
-const SIEGE_DAYS = 12, SIEGE_ROUNDS = 14, SIEGE_SHOP = 6, SIEGE_REROLL = 1;
+// SIEGE_STALL: safety valve only. A wave that is still on the field after this many rounds withdraws (counts as a defender win).
+const SIEGE_DAYS = 12, SIEGE_STALL = 30, SIEGE_SHOP = 6, SIEGE_REROLL = 1, SIEGE_REROLL_DAYS = 4;
 // Tuning knobs (sims adjust these): gold, walls, and how fast the waves grow.
-const ST = { start: 10, base: 1, zoneInc: 1, castleInc: 1, win: 2, boss: 3, wallO: 10, wallI: 13, wallC: 16, hpBase: 6, hpDay: 0.5, deckBase: 2, deckDiv: 3, vanBase: 1, vanDiv: 5, buffDiv: 8, rampDiv: 4, bossAtkDiv: 3, bossHp: 1, n2: 2, n3: 5, n4: 10, retakeHp: 3 };
+const ST = { start: 0, base: 4, zoneInc: 1, castleInc: 1, win: 3, boss: 3, wallO: 10, wallI: 13, wallC: 16, hpBase: 6, hpDay: 0.5, deckBase: -2, deckDiv: 4, vanBase: 1, vanDiv: 8, buffDiv: 8, rampDiv: 4, bossAtkDiv: 3, bossHp: 1, n2: 2, n3: 5, n4: 10, retakeHp: 3, ambStart: 3, ambBoss: 1, ambLate: 9, aiKnown: 12, dcBase: 1, dcDiv: 2, rtBase: 1, ambVan: 2, priceAdd: 1 };
 const SIEGE_START_GOLD = ST.start;
 const SZ_NAMES = ["North Gate", "East Gate", "South Gate", "West Gate", "North Ward", "East Ward", "South Ward", "West Ward", "The Castle"];
 const szWalls = (k        ) => (k === "outer" ? ST.wallO : k === "inner" ? ST.wallI : ST.wallC);
@@ -591,7 +606,7 @@ const SZ_TAC_CAP = 3;
 const siegeBehind = (i        ) => (i < 4 ? i + 4 : i < 8 ? 8 : -1);
 const siegeIncomeOf = (z       ) => (z.st !== "held" ? 0 : z.kind === "castle" ? ST.castleInc : ST.zoneInc);
 const siegeIncome = (s       ) => ST.base + s.zones.reduce((x, z) => x + siegeIncomeOf(z), 0);
-const siegePrice = (id        ) => Math.max(1, CARD[id].cost);
+const siegePrice = (id        ) => Math.max(1, CARD[id].cost) + ST.priceAdd; // market mark-up: siege prices run high
 const siegeBuyback = (id        ) => Math.max(1, Math.ceil(siegePrice(id) / 2));
 const isBoss = (day        ) => day % 3 === 0;
 function siegeReachable(s       , i        )          {
@@ -612,9 +627,28 @@ function siegeShopRoll()           {
   }
   return out;
 }
+const siegeRerollIn = (s       ) => Math.max(0, s.rerollDay + SIEGE_REROLL_DAYS - s.day);
+// How many attacks hit the city tonight: announced assaults, plus ambushes nobody sees coming.
+function siegeCounts(d        )                                 {
+  const total = d < ST.n2 + 1 ? 1 : d <= ST.n3 ? 2 : d <= ST.n4 ? 3 : 4;
+  const amb = d < ST.ambStart ? 0 : 1 + (isBoss(d) && d >= 6 ? ST.ambBoss : 0) + (d >= ST.ambLate ? 1 : 0);
+  return { total: total + amb, amb };
+}
+// Dawn: scouts announce tonight's assaults (zones you can see coming). Ambushes are rolled at nightfall.
+function siegePlan(s       ) {
+  const pushT = new Set(s.push.map((x) => x.zone));
+  const reach = s.zones.filter((z) => siegeReachable(s, z.i) && !pushT.has(z.i)).map((z) => z.i);
+  const c = siegeCounts(s.day);
+  s.plan = pickN(reach, Math.max(1, Math.min(reach.length, c.total - c.amb)));
+  s.bossAt = isBoss(s.day) ? (s.plan[0] ?? -1) : -1;
+}
+const SIEGE_START_UNITS = ["recruit", "recruit", "recruit", "recruit", "brawler", "brawler", "brawler", "brawler"];
 function newSiege(players          )        {
   const zones          = SZ_NAMES.map((name, i) => ({ i, kind: (i < 4 ? "outer" : i < 8 ? "inner" : "castle")          , name, st: "held"         , units: [], tactics: [], foe: [] }));
-  const s        = { v: 1, day: 1, phase: "day", gold: ST.start, zones, reserve: [], camp: [], shop: siegeShopRoll(), uid: 1, log: [], fights: [], cur: -1, g: null, push: [], players: players.slice(0, 2), ready: players.slice(0, 2).map(() => false), report: [], stats: { won: 0, lost: 0, zones: 0, bosses: 0, fallen: 0 }, nextCmd: 0, seq: 0 };
+  const s        = { v: 1, day: 1, phase: "day", gold: ST.start, zones, reserve: [], camp: [], shop: siegeShopRoll(), uid: 1, log: [], fights: [], cur: -1, g: null, push: [], players: players.slice(0, 2), ready: players.slice(0, 2).map(() => false), report: [], stats: { won: 0, lost: 0, zones: 0, bosses: 0, fallen: 0 }, nextCmd: 0, seq: 0, plan: [], bossAt: -1, rerollDay: -99 };
+  // starting garrison (shared): 4 Shield Recruits and 4 Tavern Brawlers wait in the reserve
+  for (const id of SIEGE_START_UNITS) s.reserve.push({ sid: s.uid++, id });
+  siegePlan(s);
   slog(s, `Day 1. The banners of every company are on the horizon. ${ST.start} gold in the war chest; hold the walls for ${SIEGE_DAYS} nights.`);
   return s;
 }
@@ -635,7 +669,7 @@ function siegeDo(s0       , a      , who        )        {
     s.gold -= siegePrice(id); s.shop[a.i] = null; s.reserve.push({ sid: s.uid++, id, by: nm });
     slog(s, `Bought ${CARD[id].name} for ${siegePrice(id)} gold${by}`);
   } else if (a.t === "reroll") {
-    if (s.gold < SIEGE_REROLL) return s0; s.gold -= SIEGE_REROLL; s.shop = siegeShopRoll(); slog(s, `New offers at the market${by}`);
+    if (s.gold < SIEGE_REROLL || siegeRerollIn(s) > 0) return s0; s.gold -= SIEGE_REROLL; s.rerollDay = s.day; s.shop = siegeShopRoll(); slog(s, `New offers at the market${by}`);
   } else if (a.t === "buyback") {
     const i = s.camp.findIndex((x) => x.sid === a.sid); if (i < 0) return s0; const c = s.camp[i]; const pr = siegeBuyback(c.id); if (s.gold < pr) return s0;
     s.gold -= pr; s.camp.splice(i, 1); c.wounded = true; c.by = nm; s.reserve.push(c); slog(s, `${CARD[c.id].name} bought back from the healing camp for ${pr} gold (wounded)${by}`);
@@ -643,12 +677,15 @@ function siegeDo(s0       , a      , who        )        {
     const z = s.zones[a.zone]; const f = findCard(s, a.sid); if (!z || !f || z.st === "lost") return s0;
     const isUnit = CARD[f.c.id].kind === "unit"; const dest = isUnit ? z.units : z.tactics;
     if (f.zone && f.zone.i === z.i) return s0;
+    if (isUnit && f.where === "zone") return s0; // units move through the reserve (pulling out exhausts them)
+    if (f.c.tired === s.day) return s0;
     if (dest.length >= (isUnit ? szCap(z) : SZ_TAC_CAP)) return s0;
     f.list.splice(f.list.indexOf(f.c), 1); f.c.by = nm; dest.push(f.c);
     slog(s, `${CARD[f.c.id].name} ${isUnit ? "posted to" : "sent to"} ${z.name}${by}`);
   } else if (a.t === "unplace") {
     const f = findCard(s, a.sid); if (!f || f.where !== "zone") return s0;
-    f.list.splice(f.list.indexOf(f.c), 1); s.reserve.push(f.c); slog(s, `${CARD[f.c.id].name} pulled back to the reserve${by}`);
+    f.list.splice(f.list.indexOf(f.c), 1); const u = CARD[f.c.id].kind === "unit"; if (u) f.c.tired = s.day; s.reserve.push(f.c);
+    slog(s, `${CARD[f.c.id].name} pulled back to the reserve${u ? " (exhausted until tomorrow)" : ""}${by}`);
   } else if (a.t === "ready") {
     s.ready[who] = a.on !== false;
     if (s.ready.every((x) => x)) siegeNight(s);
@@ -660,10 +697,10 @@ function siegeDo(s0       , a      , who        )        {
 const WAVE_POOL = ()           => PREMADE.flatMap((d) => d.cards).filter((id) => CARD[id] && !CARD[id].legend);
 const pickN =     (a     , n        )      => shuffle(a).slice(0, n);
 function waveUnit(g                 , id        , buff = 0)       { const c = CARD[id]; return { uid: g.uid++, id, atk: (c.atk || 0), hp: (c.hp || 1) + buff, maxHp: (c.hp || 1) + buff, ready: false, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) }; }
-function waveFight(s       , zone        , kind                 , carry        , boss         )         {
+function waveFight(s       , zone        , kind                 , carry        , boss         , atk                       )         {
   const d = s.day, pool = WAVE_POOL();
   const units = pool.filter((id) => CARD[id].kind === "unit" && CARD[id].cost <= 1 + Math.ceil(d / 2));
-  const vanN = Math.min(5, ST.vanBase + Math.floor(d / ST.vanDiv)) - carry.length;
+  const vanN = Math.min(5, ST.vanBase + Math.floor(d / ST.vanDiv) + (atk === "ambush" ? ST.ambVan : 0)) - carry.length;
   const buff = Math.floor((d - 1) / ST.buffDiv);
   const van         = carry.map((u) => ({ ...u, ready: false, stun: 0 }));
   for (const id of pickN(units, Math.max(0, vanN))) van.push(waveUnit(s, id, buff));
@@ -673,38 +710,42 @@ function waveFight(s       , zone        , kind                 , carry        ,
     const b = bp[Math.floor(Math.random() * bp.length)]; bossId = b.id;
     const u = waveUnit(s, b.id, Math.round(d * ST.bossHp)); u.atk += Math.floor(d / ST.bossAtkDiv); if (d >= 12) u.guard = true; van.unshift(u);
   }
-  const deck = pickN(pool, ST.deckBase + Math.ceil(d / ST.deckDiv));
-  return { zone, kind, van: van.slice(0, BOARD_MAX), deck, hp: ST.hpBase + Math.round(d * ST.hpDay), ramp: Math.min(5, Math.floor(d / ST.rampDiv)), boss: bossId, name: boss ? `${CARD[bossId ].name}'s host` : kind === "push" ? "Breach column" : `Wave ${d}`, cmd: 0 };
+  const deck = pickN(pool.filter((id) => CARD[id].cost <= ST.dcBase + Math.ceil(d / ST.dcDiv)), Math.max(0, ST.deckBase + Math.ceil(d / ST.deckDiv)));
+  return { zone, kind, van: van.slice(0, BOARD_MAX), deck, hp: 0, ramp: Math.min(5, Math.floor(d / ST.rampDiv)), boss: bossId, name: boss ? `${CARD[bossId ].name}'s host` : kind === "push" ? "Breach column" : atk === "ambush" ? `Ambushers` : `Wave ${d}`, cmd: 0, ...(atk ? { atk } : {}) };
 }
 function siegeNight(s       ) {
   s.phase = "night"; s.fights = []; s.report = []; s.ready = s.ready.map(() => false);
   const d = s.day;
   // 1) enemies holding a zone since last night: retake or lose it
   for (const z of s.zones) if (z.st === "contested") {
-    const deck = pickN(WAVE_POOL(), 1 + Math.floor(d / 3));
-    s.fights.push({ zone: z.i, kind: "retake", van: z.foe.map((u) => ({ ...u, ready: false, stun: 0 })), deck, hp: ST.retakeHp + Math.floor(d / 2), ramp: Math.min(5, Math.floor(d / ST.rampDiv)), name: "Occupiers", cmd: 0 });
+    const deck = pickN(WAVE_POOL().filter((id) => CARD[id].cost <= ST.dcBase + Math.ceil(d / ST.dcDiv)), Math.max(0, ST.rtBase + Math.floor(d / 3)));
+    s.fights.push({ zone: z.i, kind: "retake", van: z.foe.map((u) => ({ ...u, ready: false, stun: 0 })), deck, hp: 0, ramp: Math.min(5, Math.floor(d / ST.rampDiv)), name: "Occupiers", cmd: 0 });
   }
   // 2) breach columns pushing into the zone behind a destroyed one
   const pushT = new Set        ();
   for (const p of s.push) { if (s.zones[p.zone].st !== "held") continue; pushT.add(p.zone); s.fights.push(waveFight(s, p.zone, "push", p.units.slice(0, BOARD_MAX - 1), false)); }
   s.push = [];
-  // 3) tonight's wave hits some reachable zones; every 3rd night brings a boss
+  // 3) the assaults announced at dawn, then ambushes on other zones in reach; every 3rd night a boss leads an assault
   const reach = s.zones.filter((z) => siegeReachable(s, z.i) && !pushT.has(z.i)).map((z) => z.i);
-  const n = Math.min(reach.length, d < ST.n2 + 1 ? 1 : d <= ST.n3 ? 2 : d <= ST.n4 ? 3 : 4);
-  const targets = pickN(reach, n);
-  targets.forEach((zi, k) => s.fights.push(waveFight(s, zi, "wave", [], isBoss(d) && k === 0)));
-  if (isBoss(d) && !targets.length && s.fights.length) { const f = s.fights[s.fights.length - 1]; const w = waveFight(s, f.zone, "wave", [], true); f.van = w.van; f.boss = w.boss; f.name = w.name; }
-  slog(s, `Night ${d}: ${s.fights.length} attack${s.fights.length === 1 ? "" : "s"} on the city${isBoss(d) ? ", a boss leads the wave" : ""}.`);
+  const assaults = s.plan.filter((zi) => reach.includes(zi));
+  assaults.forEach((zi) => s.fights.push(waveFight(s, zi, "wave", [], zi === s.bossAt, "assault")));
+  const c = siegeCounts(d);
+  const amb = pickN(reach.filter((zi) => !assaults.includes(zi)), Math.min(c.amb, Math.max(0, c.total - assaults.length)));
+  amb.forEach((zi) => s.fights.push(waveFight(s, zi, "wave", [], false, "ambush")));
+  if (isBoss(d) && !s.fights.some((f) => f.boss) && s.fights.length) { const f = s.fights[s.fights.length - 1]; const w = waveFight(s, f.zone, "wave", [], true); f.van = w.van; f.boss = w.boss; f.name = w.name; }
+  s.plan = []; s.bossAt = -1;
+  slog(s, `Night ${d}: ${s.fights.length} attack${s.fights.length === 1 ? "" : "s"} on the city${amb.length ? `, ${amb.length} of them ambush${amb.length === 1 ? "" : "es"}` : ""}${isBoss(d) ? ", a boss leads the assault" : ""}.`);
   s.cur = -1; siegeNext(s);
 }
+const SIEGE_FOE_HP = 999; // the wave has no leader to strike; this is never shown
 function siegeGame(s       , f        )    {
   const z = s.zones[f.zone];
-  const g = newGame({ name: z.name, deck: [], hp: szWalls(z.kind), nofat: true }, { name: f.name, deck: f.deck, hp: f.hp, ramp: f.ramp });
+  const g = newGame({ name: z.name, deck: [], hp: szWalls(z.kind), nofat: true }, { name: f.name, deck: f.deck, hp: SIEGE_FOE_HP, ramp: f.ramp, nofat: true });
   g.phase = "play"; delete g.roll; delete g.mull; g.first = "b"; g.siege = { zone: f.zone, boss: f.boss };
   g.a.hand = z.tactics.map((c) => c.id);
   g.a.board = z.units.map((c) => { const u = waveUnit(g, c.id); u.sid = c.sid; return u; });
   g.b.board = f.van.map((u) => ({ ...u, uid: g.uid++, ready: false }));
-  g.log = [`${f.name} attacks ${z.name}! Hold the walls (♥ ${szWalls(z.kind)}) and break the warband (♥ ${f.hp}).`];
+  g.log = [`${f.atk === "ambush" ? "Ambush! " : ""}${f.name} attacks ${z.name}! Hold the walls (♥ ${szWalls(z.kind)}) and defeat every unit in the wave.`];
   startTurn(g, "b");
   return g;
 }
@@ -761,7 +802,9 @@ function siegeDawn(s       ) {
   s.g = null;
   if (s.day >= SIEGE_DAYS) { s.phase = "won"; slog(s, `Dawn after night ${SIEGE_DAYS}: the siege breaks. The city stands!`); return; }
   s.day++; const inc = siegeIncome(s); s.gold += inc; s.phase = "day"; s.shop = siegeShopRoll(); s.ready = s.ready.map(() => false);
-  slog(s, `Day ${s.day}. +${inc} gold from the zones still held.${isBoss(s.day) ? " Scouts report a BOSS with tonight's wave." : ""}`);
+  for (const c of s.reserve) delete c.tired;
+  siegePlan(s);
+  slog(s, `Day ${s.day}. +${inc} gold from the zones still held. Scouts see ${s.plan.length} assault${s.plan.length === 1 ? "" : "s"} coming: ${s.plan.map((i) => s.zones[i].name).join(", ")}${isBoss(s.day) ? " (a BOSS leads one)" : ""}.`);
 }
 // ---------- computer planning (sims, and the "Plan for me" helper) ----------
 const unitScore = (id        ) => { const c = CARD[id]; return (c.atk || 0) + (c.hp || 0) + (c.guard ? 2 : 0) + (c.legend ? 3 : 0) + (c.trib ? -1 : 0); };
@@ -769,15 +812,19 @@ function siegeThreat(s       )           {
   const t           = [];
   for (const z of s.zones) if (z.st === "contested") t.push(z.i);
   for (const p of s.push) if (s.zones[p.zone].st === "held") t.push(p.zone);
+  for (const i of s.plan || []) if (!t.includes(i)) t.push(i);
   for (const z of s.zones) if (siegeReachable(s, z.i) && !t.includes(z.i)) t.push(z.i);
   return t;
 }
 function siegeAiStep(s       , who        )       {
   const threat = siegeThreat(s);
-  const power = (z       ) => z.units.reduce((x, c) => x + unitScore(c.id), 0) - (z.st === "contested" ? z.foe.reduce((x, u) => x + u.atk + u.hp, 0) : 0);
+  const known = new Set        ([...s.zones.filter((z) => z.st === "contested").map((z) => z.i), ...s.push.map((p) => p.zone), ...(s.plan || [])]);
+  const power = (z       ) => z.units.reduce((x, c) => x + unitScore(c.id), 0) - (z.st === "contested" ? z.foe.reduce((x, u) => x + u.atk + u.hp, 0) : 0) - (z.i === s.bossAt ? 6 : 0);
   // 1) place reserve units on the weakest threatened zone, tactics on the strongest
-  const ru = s.reserve.filter((c) => CARD[c.id].kind === "unit").sort((x, y) => unitScore(y.id) - unitScore(x.id))[0];
-  if (ru) { const z = threat.map((i) => s.zones[i]).filter((z) => z.units.length < szCap(z)).sort((x, y) => power(x) - power(y))[0]; if (z) return { t: "place", sid: ru.sid, zone: z.i }; }
+  const ru = s.reserve.filter((c) => CARD[c.id].kind === "unit" && c.tired !== s.day).sort((x, y) => unitScore(y.id) - unitScore(x.id))[0];
+  const ambN = siegeCounts(s.day).amb;
+  const need = (z       ) => (known.has(z.i) ? ST.aiKnown : ambN > 0 ? 0 : -50) - power(z);
+  if (ru) { const z = threat.map((i) => s.zones[i]).filter((z) => z.units.length < szCap(z)).sort((x, y) => need(y) - need(x))[0]; if (z) return { t: "place", sid: ru.sid, zone: z.i }; }
   const rt = s.reserve.find((c) => CARD[c.id].kind === "spell");
   if (rt) { const z = threat.map((i) => s.zones[i]).filter((z) => z.units.length && z.tactics.length < SZ_TAC_CAP).sort((x, y) => power(y) - power(x))[0]; if (z) return { t: "place", sid: rt.sid, zone: z.i }; }
   // 2) buy: best value per gold among buybacks and shop units (keep a little for tactics)
@@ -791,4 +838,4 @@ function siegeAiStep(s       , who        )       {
 }
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, siegeGame, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
