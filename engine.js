@@ -2,7 +2,7 @@
                       
                                                                         
                                                                 
-                                                              
+                                                                      
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                                                
@@ -27,7 +27,7 @@ const CARDS            = [
   { id: "captain", name: "Blood-Oath Captain", cost: 4, kind: "unit", atk: 5, hp: 5, fac: "crimson", flavor: "Her word is her contract." },
   { id: "bastion", name: "Iron Company Bastion", cost: 4, kind: "unit", atk: 3, hp: 6, fac: "iron", guard: true, flavor: "A wall that draws a wage." },
   { id: "nightblade", name: "Nightblade Master", cost: 5, kind: "unit", atk: 5, hp: 4, fac: "shadow", swift: true, flavor: "The guild's priciest name." },
-  { id: "battlemage", name: "Hired Battlemage", cost: 5, kind: "unit", atk: 4, hp: 5, fac: "gilded", text: "Hire: 3 damage to the enemy captain.", flavor: "Spells cost extra." },
+  { id: "battlemage", name: "Hired Battlemage", cost: 5, kind: "unit", atk: 4, hp: 5, fac: "gilded", target: "any", text: "Hire: 3 damage to any target.", flavor: "Spells cost extra." },
   { id: "ogre", name: "Ogre Siegebreaker", cost: 5, kind: "unit", atk: 5, hp: 7, fac: "crimson", text: "Rage: +1 attack after each fight it survives.", flavor: "Paid by the gate broken." },
   { id: "legion", name: "The Unbroken Legion", cost: 7, kind: "unit", atk: 7, hp: 8, fac: "iron", guard: true, text: "Hire: 1 damage to all enemy sellswords.", flavor: "A whole company, one invoice." },
   { id: "ambush", name: "Ambush", cost: 1, kind: "spell", fac: "shadow", target: "enemy", text: "Deal 2 damage to an enemy sellsword or captain.", flavor: "From the hedgerows." },
@@ -56,8 +56,8 @@ const CARDS            = [
   { id: "widow", name: "The Faceless Widow", cost: 6, kind: "unit", atk: 4, hp: 5, fac: "shadow", hidden: true, deadly: true, legend: true, isNew: true, flavor: "Every contract ends in mourning." },
   { id: "moneylender", name: "Camp Moneylender", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "gilded", isNew: true, text: "Last Pay: draw a card.", flavor: "Debts outlive debtors." },
   { id: "priest", name: "Battle Priest", cost: 4, kind: "unit", atk: 3, hp: 5, fac: "gilded", isNew: true, text: "Hire: heal your captain 4 and fully heal your sellswords.", flavor: "Prayers at standard rates." },
-  { id: "golem", name: "Contract Golem", cost: 5, kind: "unit", atk: 5, hp: 6, fac: "gilded", isNew: true, flavor: "Never sleeps, never haggles." },
-  { id: "buyout", name: "Hostile Buyout", cost: 5, kind: "spell", fac: "gilded", target: "enemyUnit", isNew: true, text: "Take control of an enemy sellsword with 3 or less attack.", flavor: "Loyalty has a price. Pay it." },
+  { id: "golem", name: "Contract Golem", cost: 5, kind: "unit", atk: 5, hp: 6, fac: "gilded", isNew: true, text: "You may hire it for 7 gold instead: it gains Guard and +0/+2.", flavor: "Never sleeps, never haggles." },
+  { id: "buyout", name: "Hostile Buyout", cost: 4, kind: "spell", fac: "gilded", target: "enemyUnit", isNew: true, text: "Take control of an enemy sellsword with 3 or less attack.", flavor: "Loyalty has a price. Pay it." },
   { id: "selene", name: "Selene Goldhand", cost: 5, kind: "unit", atk: 3, hp: 5, fac: "gilded", drain: true, legend: true, isNew: true, text: "Hire: draw 2 cards.", flavor: "Audits kingdoms. Collects in blood." },
   { id: "shade", name: "Hidden sellsword", cost: 0, kind: "unit", atk: 0, hp: 1, fac: "shadow", hidden: true, token: true, text: "Face down. Only its owner knows what it is, until it attacks.", flavor: "Something waits in the dark." },
   { id: "grunt", name: "Goblin Grunt", cost: 1, kind: "unit", atk: 1, hp: 1, fac: "horde", token: true, flavor: "Cheap. Plentiful. Mostly brave." },
@@ -97,7 +97,7 @@ const CARDS            = [
   { id: "attorin", name: "Attorin, Line Breaker", cost: 5, kind: "unit", atk: 9, hp: 1, fac: "horde", text: "Last Pay: summon 3 Goblin Grunts.", flavor: "He breaks the line. The goblins fill the hole." },
   { id: "zack", name: "Zack, Hollow-Hearted", cost: 5, kind: "unit", atk: 4, hp: 3, fac: "shadow", swift: true, text: "Hire: give your strongest other sellsword Deadly.", flavor: "Nothing behind the eyes. Everything on the blade." },
   { id: "jordan", name: "Jordan, Fire-Hearted", cost: 4, kind: "unit", atk: 3, hp: 4, fac: "crimson", first: true, flavor: "Mud in the eyes, steel in the ribs. Honor is extra." },
-  { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 4, fac: "gilded", text: "Hire: heal your captain and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
+  { id: "graci", name: "Graci, Kind-Hearted", cost: 4, kind: "unit", atk: 2, hp: 4, fac: "gilded", text: "Hire: heal your captain 5 and all your sellswords 2, then draw a card.", flavor: "Bandages, blessings, and a very stern look." },
   { id: "bogleech", name: "Bog Leech", cost: 1, kind: "unit", atk: 1, hp: 2, fac: "beast", trib: { k: "gold", n: 1 }, text: "Fed: heal your captain 1 and gain +1 attack.", flavor: "It takes a little. It gives a little back." },
   { id: "rotmaw", name: "Rotmaw, the Hungry Wyrm", cost: 5, kind: "unit", atk: 5, hp: 5, fac: "beast", trib: { k: "eat", n: 1 }, text: "Each turn it eats a random ally and gains its attack and health. Fed: 2 damage to a random enemy.", flavor: "Rot never fills it. Nothing ever has." },
   { id: "ambusher", name: "Alley Ambusher", cost: 3, kind: "unit", atk: 3, hp: 3, fac: "shadow", hidden: true, isNew: true, text: "When it leaves Hidden by attacking a sellsword, Stun that sellsword.", flavor: "You never see the first blow. You feel it for a day." },
@@ -291,6 +291,7 @@ function spellTargetOk(g   , s      , c         , t                    )        
   if (!c.target || c.target === "none") return true;
   if (!t) return false;
   if (c.target === "friend") return t.side === s && t.uid !== "hero" && g[s].board.some((u) => u.uid === t.uid);
+  if (c.target === "any") { if (t.uid === "hero") return !(g.siege && t.side === "b"); const u = g[t.side].board.find((x) => x.uid === t.uid); return !!u && u.hp > 0 && (t.side === s || !u.hidden); }
   if (c.target === "unit") { if (t.uid === "hero") return false; const u = g[t.side].board.find((x) => x.uid === t.uid); return !!u && u.hp > 0 && (t.side === s || !u.hidden); }
   if (t.side !== other(s)) return false;
   if (t.uid === "hero") return c.target === "enemy" && !(g.siege && t.side === "b");
@@ -342,13 +343,15 @@ function canPlay(g   , s      , idx        )          {
   return true;
 }
 // Hire effects of a unit entering the field (normal play, or a siege garrison / wave taking the field at battle start).
+// Optional pricier hire (the hire-choice overlay): cost in gold. Siege garrisons always use the normal version.
+const ALT_HIRE                         = { bodyguard: 4, golem: 7 };
 const HIRE_FX = new Set(["ballista", "battlemage", "clerk", "crossbow", "dorn", "drummer", "gorger", "graci", "headtaker", "hollowqueen", "legion", "medic", "priest", "quartermaster", "rabble", "selene", "sergeant", "shaman", "spymaster", "warboss", "warchief", "warlord", "worg", "zack"]);
-function enterFx(g   , s      , nu      , others        ) {
+function enterFx(g   , s      , nu      , others        , tg         ) {
   const p = g[s], e = g[other(s)], c = CARD[nu.id];
       if (c.id === "medic") heal(p, 3);
       if (c.id === "quartermaster" || c.id === "spymaster") draw(g, s);
       if (c.id === "selene") draw(g, s, 2);
-      if (c.id === "battlemage") e.hp -= 3;
+      if (c.id === "battlemage") { if (tg) dmgTarget(g, tg, 3); else e.hp -= 3; } // no chosen target (siege garrison / wave): the enemy captain
       if (c.id === "legion") for (const u of e.board) u.hp -= 1;
       if (c.id === "drummer") for (const u of others) u.atk += 1;
       if (c.id === "warlord") for (const u of others) u.ready = true;
@@ -362,7 +365,7 @@ function enterFx(g   , s      , nu      , others        ) {
       if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
       if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
       if (c.id === "clerk") p.gold += 1;
-      if (c.id === "graci") { heal(p, 2); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
+      if (c.id === "graci") { heal(p, 5); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
       if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${unitName(t, true)} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
@@ -399,7 +402,7 @@ function apply(g0   , a        )    {
     const c = CARD[p.hand[a.idx]];
     const tg = a.target;
     if (!spellTargetOk(g, s, c, tg)) return g0;
-    const alt = c.id === "bodyguard" && !!a.alt; const cost = alt ? 4 : c.cost;
+    const alt = !!ALT_HIRE[c.id] && !!a.alt; const cost = alt ? ALT_HIRE[c.id] : c.cost;
     if (p.gold < cost) return g0;
     p.hand.splice(a.idx, 1); p.gold -= cost;
     if (p.recycle && p.grave && c.kind === "spell" && !c.token) p.grave.push(c.id);
@@ -408,9 +411,10 @@ function apply(g0   , a        )    {
     if (c.kind === "unit") {
       const nu       = { uid: g.uid++, id: c.id, atk: c.atk || 0, hp: c.hp || 1, maxHp: c.hp || 1, ready: !!c.swift, guard: !!c.guard, hidden: !!c.hidden, ...(c.trib ? { trib: { ...c.trib } } : {}) };
       const others = p.board.slice();
-      if (alt) { nu.atk = 2; nu.hp = nu.maxHp = 5; push(g, `${p.name} paid 4 gold: Hired Bodyguard enters as 2/5`); }
+      if (alt && c.id === "bodyguard") { nu.atk = 2; nu.hp = nu.maxHp = 5; push(g, `${p.name} paid 4 gold: Hired Bodyguard enters as 2/5`); }
+      if (alt && c.id === "golem") { nu.guard = true; nu.hp += 2; nu.maxHp += 2; push(g, `${p.name} paid 7 gold: Contract Golem gains Guard and +0/+2`); }
       p.board.push(nu);
-      enterFx(g, s, nu, others);
+      enterFx(g, s, nu, others, tg);
     } else {
       if (c.id === "warcall") summon(g, s, 2);
       if (c.id === "bloodfeast" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; draw(g, s, 2); }
@@ -503,6 +507,16 @@ function aiAction(g   )         {
       if (c.trib && c.trib.k === "gold" && goldDue(p) + c.trib.n > Math.min(MAX_GOLD, p.maxGold + 1)) continue;
       if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
+      if (c.id === "golem" && p.gold >= 7) { const blocks = p.hand.some((h, j) => j !== idx && CARD[h].cost <= p.gold - 5 && CARD[h].cost > p.gold - 7 && canPlay(g, s, j)); return { t: "play", idx, alt: !blocks }; }
+      if (c.id === "battlemage") {
+        const kill = vis.filter((u) => u.hp > 0 && u.hp <= 3).sort((x, y) => value(y) - value(x))[0];
+        if (heroOk && e.hp <= 3) return { t: "play", idx, target: { side: o, uid: "hero" } };
+        if (kill && value(kill) >= 4) return { t: "play", idx, target: { side: o, uid: kill.uid } };
+        if (heroOk) return { t: "play", idx, target: { side: o, uid: "hero" } };
+        const any = kill || vis.slice().sort((x, y) => value(y) - value(x))[0];
+        if (any) return { t: "play", idx, target: { side: o, uid: any.uid } };
+        continue;
+      }
       if (c.id === "bodyguard" && p.gold >= 4) { const blocks = p.hand.some((h, j) => j !== idx && CARD[h].cost <= p.gold - 1 && CARD[h].cost > p.gold - 4 && canPlay(g, s, j)); return { t: "play", idx, alt: !blocks }; }
       return { t: "play", idx };
     }
@@ -869,4 +883,4 @@ function siegeAiStep(s       , who        )       {
 }
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, unitName, shadeUnit, viewFor, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, unitName, shadeUnit, viewFor, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, ALT_HIRE, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
