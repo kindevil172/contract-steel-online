@@ -597,7 +597,7 @@ const countOf = (cards          , id        ) => cards.filter((c) => c === id).l
                                                                                                                                                                   
                                                                                                                                                             
                                                                                                                     
-                                                    
+                                                                   
  
                                                                                                                                                                                                  
 // SIEGE_STALL: safety valve only. A wave that is still on the field after this many rounds withdraws (counts as a defender win).

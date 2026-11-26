@@ -5,6 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { initAccounts, handleApi, userIdFor, recordResult, accountsUp } from "./accounts.js";
 import { newGame, apply, deckProblems, CARD, COLLECTION, rarityOf, copyLimit, aiAction, aiMulligan, newSiege, siegeDo, siegeFinish, siegeRerollIn } from "./engine.js";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,8 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url || "/", "http://x");
-  if (u.pathname === "/health") { res.writeHead(200, { "content-type": "text/plain" }); res.end(`ok ${rooms.size} rooms`); return; }
+  if (u.pathname.startsWith("/api/")) { handleApi(req, res, u.pathname, picOk).catch(() => { try { res.writeHead(503); res.end("{}"); } catch {} }); return; }
+  if (u.pathname === "/health") { res.writeHead(200, { "content-type": "text/plain" }); res.end(`ok ${rooms.size} rooms, accounts ${accountsUp() ? "up" : "down"}`); return; }
   let p = decodeURIComponent(u.pathname);
   if (p === "/" || p === "") p = "/index.html";
   const file = path.normalize(path.join(PUB, p));
@@ -32,6 +34,32 @@ const rooms = new Map();
 const ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function newCode() { for (;;) { let c = ""; for (let i = 0; i < 5; i++) c += ALPH[crypto.randomInt(ALPH.length)]; if (!rooms.has(c)) return c; } }
 const send = (ws, m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+// Accounts: a portrait is any card id; the session token (m.auth) is resolved in the background so a slow or
+// unreachable database never holds up a room. Results are recorded only for players whose token resolved.
+const picOk = (id) => typeof id === "string" && id.length < 40 && !!CARD[id];
+function bindUser(p, m) {
+  if (picOk(m.pic)) p.pic = m.pic;
+  if (m.auth && typeof m.auth === "string") userIdFor(m.auth).then((uid) => { if (uid) p.uid = uid; }).catch(() => {});
+}
+const topFac = (ids) => { const n = {}; for (const id of ids) { const c = CARD[id]; if (c && c.fac) n[c.fac] = (n[c.fac] || 0) + 1; } return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0] || ""; };
+function recordMatch(room) {
+  const g = room.g; if (!g || !g.winner || room.recG === g) return; room.recG = g;
+  const mode = room.tourRoom ? "tour" : room.mode === "draft" ? "draft" : "online";
+  for (const p of room.players) {
+    const uid = p.uid; if (!uid) continue;
+    const o = room.players.find((q) => q !== p);
+    const cards = p.played || {};
+    recordResult(uid, { mode, win: g.winner === p.side, opp: o ? o.name : "", fac: topFac(p.deck ? p.deck.cards : Object.keys(cards)), cards });
+  }
+}
+function recordSiege(room) {
+  const s = room.siege; if (!s || (s.phase !== "won" && s.phase !== "lost") || room.recS === s.seq + ":" + s.phase) return; room.recS = s.seq + ":" + s.phase;
+  for (const p of room.players) {
+    if (!p.uid) continue;
+    const o = room.players.find((q) => q !== p); const cards = p.played || {};
+    recordResult(p.uid, { mode: "siegeCoop", win: s.phase === "won", opp: o ? `with ${o.name}` : "alone", fac: topFac(Object.keys(cards)), cards, day: s.day });
+  }
+}
 const cleanName = (n, d) => (String(n || "").replace(/[^\p{L}\p{N} _.'-]/gu, "").trim().slice(0, 20) || d);
 
 function checkDeck(deck) {
@@ -67,7 +95,7 @@ function sendDraft(room, only) {
   for (const p of room.players) {
     if (only && p !== only) continue;
     const o = p.side === "a" ? "b" : "a", peer = room.players.find((q) => q !== p);
-    send(p.ws, { t: "draft", code: room.code, side: p.side, stage: d.stage, round: d.round, step: d.step, rounds: DRAFT.rounds, total: DRAFT.rounds * DRAFT.packSize, pack: d.chosen[p.side] == null ? d.packs[p.side] : [], legal: d.stage === "pick" && d.chosen[p.side] == null ? legalIdx(d.packs[p.side], d.picks[p.side]) : [], picks: d.picks[p.side], sel: d.sel[p.side], done: d.stage === "pick" && d.chosen[p.side] != null, peerDone: d.stage === "review" ? d.ready.has(o) : d.chosen[o] != null, peerCount: d.picks[o].length, peerName: peer ? peer.name : "", left: Math.max(0, d.deadline - Date.now()), pickMs: d.stage === "review" ? DRAFT.reviewMs : DRAFT.pickMs, ready: [...d.ready], peer: !!(peer && (peer.ai || peer.ws)), ...(room.tourRoom ? { tour: true, round: d.round, stageName: room.rec.mi === 2 ? "Final" : "Semifinal" } : {}) });
+    send(p.ws, { t: "draft", code: room.code, side: p.side, pics: { [p.side]: p.pic || null, [o]: peer ? peer.pic || null : null }, stage: d.stage, round: d.round, step: d.step, rounds: DRAFT.rounds, total: DRAFT.rounds * DRAFT.packSize, pack: d.chosen[p.side] == null ? d.packs[p.side] : [], legal: d.stage === "pick" && d.chosen[p.side] == null ? legalIdx(d.packs[p.side], d.picks[p.side]) : [], picks: d.picks[p.side], sel: d.sel[p.side], done: d.stage === "pick" && d.chosen[p.side] != null, peerDone: d.stage === "review" ? d.ready.has(o) : d.chosen[o] != null, peerCount: d.picks[o].length, peerName: peer ? peer.name : "", left: Math.max(0, d.deadline - Date.now()), pickMs: d.stage === "review" ? DRAFT.reviewMs : DRAFT.pickMs, ready: [...d.ready], peer: !!(peer && (peer.ai || peer.ws)), ...(room.tourRoom ? { tour: true, round: d.round, stageName: room.rec.mi === 2 ? "Final" : "Semifinal" } : {}) });
   }
   if (room.tourRoom) aiKick(room);
 }
@@ -119,15 +147,17 @@ function broadcast(room) {
   for (const p of room.players) {
     const peer = room.players.find((q) => q !== p);
     if (!p.ws) continue;
-    send(p.ws, { t: "state", mode: room.mode, rk: Object.fromEntries([...room.rematch].map(([tk, k]) => [room.players.find((q) => q.token === tk)?.side, k])), code: room.code, side: p.side, seq: room.seq, g: redact(room.g, p.side), last: room.last, peer: !!(peer && (peer.ai || peer.ws)), rematch: [...room.rematch.keys()].map((tk) => room.players.find((q) => q.token === tk)?.side) });
+    send(p.ws, { t: "state", pics: Object.fromEntries(room.players.map((q) => [q.side, q.pic || null])), names: Object.fromEntries(room.players.map((q) => [q.side, q.name])), mode: room.mode, rk: Object.fromEntries([...room.rematch].map(([tk, k]) => [room.players.find((q) => q.token === tk)?.side, k])), code: room.code, side: p.side, seq: room.seq, g: redact(room.g, p.side), last: room.last, peer: !!(peer && (peer.ai || peer.ws)), rematch: [...room.rematch.keys()].map((tk) => room.players.find((q) => q.token === tk)?.side) });
   }
   armRoll(room);
+  recordMatch(room);
   if (room.tourRoom) tourAfter(room);
 }
 function start(room) {
   const pa = room.players.find((p) => p.side === "a"), pb = room.players.find((p) => p.side === "b");
   room.g = newGame({ name: pa.name, deck: pa.deck.cards, hp: 15 }, { name: pb.name, deck: pb.deck.cards, hp: 15 });
   room.seq++; room.last = null; room.rematch = new Map();
+  for (const p of room.players) p.played = {};
   broadcast(room);
 }
 // Turn-order roll: the server's newGame rolls the dice. Only the winner may choose; after ROLL_MS (animation + 15 s) they go first by default.
@@ -171,11 +201,12 @@ function siegeView(room, p) {
   if (v.g) { v.g.b.hand = v.g.b.hand.map(() => "?"); v.g.b.deck = v.g.b.deck.map(() => "?"); }
   if (v.fights) for (const f of v.fights) f.deck = f.deck.map(() => "?");
   const peer = room.players.find((q) => q !== p);
-  return { t: "siege", code: room.code, me: p.idx, n: room.seq, s: v, peer: sHere(peer), names: room.players.map((q) => q.name) };
+  return { t: "siege", code: room.code, me: p.idx, n: room.seq, s: v, peer: sHere(peer), names: room.players.map((q) => q.name), pics: room.players.map((q) => q.pic || null) };
 }
 function siegeBroadcast(room) {
   room.seq++;
   for (const p of room.players) if (p.ws) send(p.ws, siegeView(room, p));
+  recordSiege(room);
   siegeTick(room);
 }
 function siegeTick(room) {
@@ -244,6 +275,7 @@ function handleSiege(ws, room, p, m) {
     const tg = (t) => ({ side: t.side === "b" ? "b" : "a", uid: t.uid === "hero" ? "hero" : Number(t.uid) });
     const clean = a.t === "end" ? { t: "end" } : a.t === "trib" ? { t: "trib", uid: a.uid, pay: !!a.pay } : a.t === "play" ? { t: "play", idx: a.idx, ...(a.alt ? { alt: true } : {}), ...(a.target ? { target: tg(a.target) } : {}) } : { t: "attack", uid: a.uid, target: tg(a.target) };
     let n; try { n = apply(g, clean); } catch (e) { console.error("siege apply", e); n = g; }
+    if (n !== g && clean.t === "play") { const id = g.a.hand[clean.idx]; if (id) { p.played = p.played || {}; p.played[id] = (p.played[id] || 0) + 1; } }
     if (n === g) { send(ws, { t: "error", msg: "That move isn't allowed right now." }); siegeBroadcast(room); return true; }
     room.siege = { ...s, g: n }; siegeBroadcast(room); return true;
   }
@@ -262,7 +294,7 @@ const TOUR = { aiMs: Number(process.env.TOUR_AI_MS) || 900, aiPickMs: Number(pro
 const AI_NAMES = ["Baron Vex", "Lady Morrow", "Old Grimtusk", "Sister Ash", "The Gilded Hand"];
 const seatHere = (s) => s.ai || !!s.ws;
 const mkSeat = (i) => ({ idx: i, token: null, name: "", ws: null, ai: false, human: false, wasHuman: false, dropT: null });
-const resetSeat = (s) => { clearTimeout(s.dropT); Object.assign(s, mkSeat(s.idx)); };
+const resetSeat = (s) => { clearTimeout(s.dropT); Object.assign(s, mkSeat(s.idx)); delete s.uid; delete s.pic; };
 const ROUND_NAME = ["Semifinal 1", "Semifinal 2", "Final"];
 function lostSeat(t, idx) { return t.matches.some((m) => m && m.status === "done" && (m.sa === idx || m.sb === idx) && m.winner !== idx); }
 function activeRec(room, seat) { return room.tour.matches.find((m) => m && m.room && m.status !== "done" && (m.sa === seat.idx || m.sb === seat.idx)) || null; }
@@ -271,7 +303,7 @@ function tourView(room, seat) {
   const mine = seat ? t.matches.map((m, i) => (m && (m.sa === seat.idx || m.sb === seat.idx) ? i : -1)).filter((i) => i >= 0) : [];
   return {
     t: "tour", code: room.code, you: seat ? seat.idx : -1, host: !!seat && seat.idx === t.host, stage: t.stage,
-    seats: t.seats.map((s) => ({ name: s.name, ai: s.ai, human: s.human, standIn: s.ai && s.wasHuman, here: seatHere(s), empty: !s.ai && !s.human })),
+    seats: t.seats.map((s) => ({ pic: s.human || s.wasHuman ? s.pic || null : null, name: s.name, ai: s.ai, human: s.human, standIn: s.ai && s.wasHuman, here: seatHere(s), empty: !s.ai && !s.human })),
     matches: t.matches.map((m, i) => (m ? { name: ROUND_NAME[i], a: m.sa, b: m.sb, first: m.first, status: m.status, winner: m.winner, rounds: m.rounds, hp: m.hp, sim: m.sim } : null)),
     champion: t.champion, notice: t.notice || "", myMatch: mine.length ? mine[mine.length - 1] : -1,
     out: seat ? lostSeat(t, seat.idx) : false, full: t.seats.every((s) => s.ai || s.human),
@@ -293,7 +325,7 @@ function attachTour(room, seat, ws) {
   if (rec) { const mr = rec.room; if (mr.draft) sendDraft(mr, mr.players.find((q) => q.seat === seat)); else if (mr.g) broadcast(mr); }
 }
 function matchPlayer(seat, side) {
-  return { seat, side, deck: null, get token() { return seat.token || `ai-${seat.idx}`; }, get name() { return seat.name; }, get ws() { return seat.ai ? null : seat.ws; }, get ai() { return seat.ai; } };
+  return { seat, side, deck: null, played: {}, get pic() { return seat.pic || null; }, get uid() { return seat.ai ? null : seat.uid || null; }, get token() { return seat.token || `ai-${seat.idx}`; }, get name() { return seat.name; }, get ws() { return seat.ai ? null : seat.ws; }, get ai() { return seat.ai; } };
 }
 // Quick server-side AI vs AI match: draft both decks with the auto-pick rule, then play it out.
 function simMatch(nameA, nameB) {
@@ -453,14 +485,14 @@ wss.on("connection", (ws) => {
       if (m.mode === "tour") {
         const code = newCode(), seats = [0, 1, 2, 3].map(mkSeat);
         const room = { code, mode: "tour", players: seats, tour: { seats, host: 0, stage: "lobby", matches: [null, null, null], champion: null, notice: "" }, g: null, draft: null, seq: 0, last: null, touched: Date.now(), rematch: new Map() };
-        Object.assign(seats[0], { human: true, token: crypto.randomUUID(), name: cleanName(m.name, "Host") });
+        Object.assign(seats[0], { human: true, token: crypto.randomUUID(), name: cleanName(m.name, "Host") }); bindUser(seats[0], m);
         rooms.set(code, room); attachTour(room, seats[0], ws);
         return;
       }
       if (m.mode === "siege") {
         const code = newCode();
         const room = { code, mode: "siege", players: [], siege: null, g: null, draft: null, seq: 0, last: null, touched: Date.now(), rematch: new Map() };
-        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Host"), idx: 0, side: "a", ws: null };
+        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Host"), idx: 0, side: "a", ws: null }; bindUser(p, m);
         room.players.push(p); rooms.set(code, room); attach(room, p, ws);
         return;
       }
@@ -468,8 +500,8 @@ wss.on("connection", (ws) => {
       const bad = mode === "draft" ? null : checkDeck(m.deck); if (bad) { send(ws, { t: "error", msg: bad }); return; }
       const code = newCode();
       const room = { code, mode, players: [], g: null, draft: null, seq: 0, last: null, touched: Date.now(), rematch: new Map() };
-      const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Host"), deck: mode === "draft" ? null : { name: String(m.deck.name || "Deck").slice(0, 40), cards: m.deck.cards.slice() }, side: "a", ws: null };
-      room.players.push(p); rooms.set(code, room); attach(room, p, ws);
+      const p = { played: {}, token: crypto.randomUUID(), name: cleanName(m.name, "Host"), deck: mode === "draft" ? null : { name: String(m.deck.name || "Deck").slice(0, 40), cards: m.deck.cards.slice() }, side: "a", ws: null };
+      bindUser(p, m); room.players.push(p); rooms.set(code, room); attach(room, p, ws);
       return;
     }
     if (m.t === "join") {
@@ -482,7 +514,7 @@ wss.on("connection", (ws) => {
         const s = t.seats.find((x) => !x.human && !x.ai);
         if (!s) { send(ws, { t: "error", msg: "That tournament is full (4 seats)." }); return; }
         let name = cleanName(m.name, "Guest"); const used = new Set(t.seats.map((x) => x.name)); for (let k = 2; used.has(name); k++) name = `${cleanName(m.name, "Guest").slice(0, 17)} ${k}`;
-        Object.assign(s, { human: true, ai: false, wasHuman: false, token: crypto.randomUUID(), name });
+        Object.assign(s, { human: true, ai: false, wasHuman: false, token: crypto.randomUUID(), name }); bindUser(s, m);
         attachTour(room, s, ws); tourSend(room, `${name} took seat ${s.idx + 1}.`);
         return;
       }
@@ -490,7 +522,7 @@ wss.on("connection", (ws) => {
       if (room.mode === "siege") {
         if (room.siege) { send(ws, { t: "error", msg: "That siege has already started." }); return; }
         const host = room.players[0];
-        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Guest"), idx: 1, side: "b", ws: null };
+        const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Guest"), idx: 1, side: "b", ws: null }; bindUser(p, m);
         if (p.name === host.name) p.name = `${p.name} 2`;
         room.players.push(p); room.siege = newSiege([host.name, p.name]); attach(room, p, ws);
         return;
@@ -498,15 +530,16 @@ wss.on("connection", (ws) => {
       const draft = room.mode === "draft";
       const bad = draft ? null : checkDeck(m.deck); if (bad) { send(ws, { t: "error", msg: bad }); return; }
       const host = room.players[0];
-      const p = { token: crypto.randomUUID(), name: cleanName(m.name, "Guest"), deck: draft ? null : { name: String(m.deck.name || "Deck").slice(0, 40), cards: m.deck.cards.slice() }, side: "b", ws: null };
+      const p = { played: {}, token: crypto.randomUUID(), name: cleanName(m.name, "Guest"), deck: draft ? null : { name: String(m.deck.name || "Deck").slice(0, 40), cards: m.deck.cards.slice() }, side: "b", ws: null };
       if (p.name === host.name) p.name = `${p.name} 2`;
-      room.players.push(p); attach(room, p, ws); if (draft) startDraft(room); else start(room);
+      bindUser(p, m); room.players.push(p); attach(room, p, ws); if (draft) startDraft(room); else start(room);
       return;
     }
     if (m.t === "rejoin") {
       const room = rooms.get(String(m.code || "").toUpperCase());
       const p = room && room.players.find((q) => q.token === m.token);
       if (!p) { send(ws, { t: "error", msg: "That match has ended or expired. Start a new room.", gone: true }); return; }
+      bindUser(p, m);
       if (room.mode === "tour") { attachTour(room, p, ws); return; }
       attach(room, p, ws);
       return;
@@ -571,6 +604,7 @@ wss.on("connection", (ws) => {
       let next;
       try { next = apply(room.g, clean); } catch (e) { console.error("apply failed", e); next = room.g; }
       if (next === room.g) { send(ws, { t: "error", msg: "That move isn't allowed right now." }); broadcast(room); return; }
+      if (clean.t === "play") { const id = room.g[p.side].hand[clean.idx]; if (id) { p.played = p.played || {}; p.played[id] = (p.played[id] || 0) + 1; } }
       room.g = next; room.seq++; room.last = { action: clean, actor: p.side };
       broadcast(room);
       return;
@@ -613,4 +647,5 @@ setInterval(() => {
   const now = Date.now();
   for (const [code, room] of rooms) if (now - room.touched > ROOM_IDLE_MS && room.players.every((p) => !p.ws)) { if (room.draft) clearTimeout(room.draft.timer); clearTimeout(room.sT); rooms.delete(code); }
 }, 15000);
+initAccounts(process.env.DATABASE_URL).catch((e) => console.log("accounts: init failed", e.message));
 server.listen(PORT, () => console.log(`Contract & Steel online on http://localhost:${PORT}`));
