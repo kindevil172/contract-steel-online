@@ -5,7 +5,7 @@
                                                               
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
-                                                                                                                                                                                                
+                                                                                                                                                                                                               
                                                                                                                                                                                                                                   
                                                                                                                                                                                                                                                                                                                                                                                       
                                                    
@@ -328,6 +328,38 @@ function canPlay(g   , s      , idx        )          {
   }
   return true;
 }
+// Hire effects of a unit entering the field (normal play, or a siege garrison / wave taking the field at battle start).
+const HIRE_FX = new Set(["ballista", "battlemage", "clerk", "crossbow", "dorn", "drummer", "gorger", "graci", "headtaker", "hollowqueen", "legion", "medic", "priest", "quartermaster", "rabble", "selene", "sergeant", "shaman", "spymaster", "warboss", "warchief", "warlord", "worg", "zack"]);
+function enterFx(g   , s      , nu      , others        ) {
+  const p = g[s], e = g[other(s)], c = CARD[nu.id];
+      if (c.id === "medic") heal(p, 3);
+      if (c.id === "quartermaster" || c.id === "spymaster") draw(g, s);
+      if (c.id === "selene") draw(g, s, 2);
+      if (c.id === "battlemage") e.hp -= 3;
+      if (c.id === "legion") for (const u of e.board) u.hp -= 1;
+      if (c.id === "drummer") for (const u of others) u.atk += 1;
+      if (c.id === "warlord") for (const u of others) u.ready = true;
+      if (c.id === "sergeant") for (const u of others) { u.hp += 1; u.maxHp += 1; }
+      if (c.id === "dorn") for (const u of others) { u.guard = true; u.hp += 2; u.maxHp += 2; }
+      if (c.id === "priest") { heal(p, 4); for (const u of p.board) u.hp = Math.max(u.hp, u.maxHp); }
+      if (c.id === "crossbow") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 1; }
+      if (c.id === "rabble" || c.id === "worg") summon(g, s, 1);
+      if (c.id === "shaman") for (const u of others) { u.atk++; u.hp++; u.maxHp++; }
+      if (c.id === "gorger") { const v = others.slice().sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (v) { nu.atk += v.atk; nu.hp += Math.max(0, v.hp); nu.maxHp = nu.hp; v.hp = 0; } }
+      if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
+      if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
+      if (c.id === "clerk") p.gold += 1;
+      if (c.id === "graci") { heal(p, 2); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
+      if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
+      if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
+      if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
+      if (c.id === "hollowqueen") {
+        // Devours the enemy sellsword with the highest attack + current health (random tiebreak, Hidden included); it is destroyed and she gains its attack and current health.
+        const es = e.board.filter((u) => u.hp > 0);
+        if (es.length) { const top = Math.max(...es.map((u) => u.atk + u.hp)); const cs = es.filter((u) => u.atk + u.hp === top); const v = cs[Math.floor(Math.random() * cs.length)];
+          const ga = v.atk, gh = v.hp; nu.atk += ga; nu.hp += gh; nu.maxHp += gh; v.hp = 0; push(g, `Hollow Queen devoured ${CARD[v.id].name} (+${ga}/+${gh})`); }
+      }
+}
 function apply(g0   , a        )    {
   if (g0.winner) return g0;
   if (g0.phase === "roll") return a.t === "first" ? chooseFirst(g0, a.side, !!a.first) : g0;
@@ -365,33 +397,7 @@ function apply(g0   , a        )    {
       const others = p.board.slice();
       if (alt) { nu.atk = 2; nu.hp = nu.maxHp = 5; push(g, `${p.name} paid 4 gold: Hired Bodyguard enters as 2/5`); }
       p.board.push(nu);
-      if (c.id === "medic") heal(p, 3);
-      if (c.id === "quartermaster" || c.id === "spymaster") draw(g, s);
-      if (c.id === "selene") draw(g, s, 2);
-      if (c.id === "battlemage") e.hp -= 3;
-      if (c.id === "legion") for (const u of e.board) u.hp -= 1;
-      if (c.id === "drummer") for (const u of others) u.atk += 1;
-      if (c.id === "warlord") for (const u of others) u.ready = true;
-      if (c.id === "sergeant") for (const u of others) { u.hp += 1; u.maxHp += 1; }
-      if (c.id === "dorn") for (const u of others) { u.guard = true; u.hp += 2; u.maxHp += 2; }
-      if (c.id === "priest") { heal(p, 4); for (const u of p.board) u.hp = Math.max(u.hp, u.maxHp); }
-      if (c.id === "crossbow") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 1; }
-      if (c.id === "rabble" || c.id === "worg") summon(g, s, 1);
-      if (c.id === "shaman") for (const u of others) { u.atk++; u.hp++; u.maxHp++; }
-      if (c.id === "gorger") { const v = others.slice().sort((x, y) => x.atk + x.hp - y.atk - y.hp)[0]; if (v) { nu.atk += v.atk; nu.hp += Math.max(0, v.hp); nu.maxHp = nu.hp; v.hp = 0; } }
-      if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
-      if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
-      if (c.id === "clerk") p.gold += 1;
-      if (c.id === "graci") { heal(p, 2); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
-      if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${CARD[t.id].name} gained Deadly`); } }
-      if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
-      if (c.id === "warboss") { summon(g, s, BOARD_MAX); for (const u of p.board) if (u.id === "grunt") u.atk++; }
-      if (c.id === "hollowqueen") {
-        // Devours the enemy sellsword with the highest attack + current health (random tiebreak, Hidden included); it is destroyed and she gains its attack and current health.
-        const es = e.board.filter((u) => u.hp > 0);
-        if (es.length) { const top = Math.max(...es.map((u) => u.atk + u.hp)); const cs = es.filter((u) => u.atk + u.hp === top); const v = cs[Math.floor(Math.random() * cs.length)];
-          const ga = v.atk, gh = v.hp; nu.atk += ga; nu.hp += gh; nu.maxHp += gh; v.hp = 0; push(g, `Hollow Queen devoured ${CARD[v.id].name} (+${ga}/+${gh})`); }
-      }
+      enterFx(g, s, nu, others);
     } else {
       if (c.id === "warcall") summon(g, s, 2);
       if (c.id === "bloodfeast" && tg) { const u = p.board.find((x) => x.uid === tg.uid); if (u) u.hp = 0; draw(g, s, 2); }
@@ -597,7 +603,7 @@ const countOf = (cards          , id        ) => cards.filter((c) => c === id).l
 // SIEGE_STALL: safety valve only. A wave that is still on the field after this many rounds withdraws (counts as a defender win).
 const SIEGE_DAYS = 12, SIEGE_STALL = 30, SIEGE_SHOP = 6, SIEGE_REROLL = 1, SIEGE_REROLL_DAYS = 4;
 // Tuning knobs (sims adjust these): gold, walls, and how fast the waves grow.
-const ST = { start: 0, base: 4, zoneInc: 1, castleInc: 1, win: 3, boss: 3, wallO: 10, wallI: 13, wallC: 16, hpBase: 6, hpDay: 0.5, deckBase: -2, deckDiv: 4, vanBase: 1, vanDiv: 8, buffDiv: 8, rampDiv: 4, bossAtkDiv: 3, bossHp: 1, n2: 2, n3: 5, n4: 10, retakeHp: 3, ambStart: 3, ambBoss: 1, ambLate: 9, aiKnown: 12, dcBase: 1, dcDiv: 2, rtBase: 1, ambVan: 2, priceAdd: 1 };
+const ST = { start: 0, base: 2, zoneInc: 1, castleInc: 1, win: 5, boss: 3, wallO: 12, wallI: 15, wallC: 18, hpBase: 6, hpDay: 0.5, deckBase: -2, deckDiv: 4, vanBase: 1, vanDiv: 8, buffDiv: 12, rampDiv: 4, bossAtkDiv: 3, bossHp: 0.5, n2: 2, n3: 5, n4: 11, retakeHp: 3, ambStart: 3, ambBoss: 1, ambLate: 9, aiKnown: 12, dcBase: 1, dcDiv: 2, rtBase: 1, ambVan: 1, priceAdd: 1, priceMul: 1.5 };
 const SIEGE_START_GOLD = ST.start;
 const SZ_NAMES = ["North Gate", "East Gate", "South Gate", "West Gate", "North Ward", "East Ward", "South Ward", "West Ward", "The Castle"];
 const szWalls = (k        ) => (k === "outer" ? ST.wallO : k === "inner" ? ST.wallI : ST.wallC);
@@ -606,7 +612,7 @@ const SZ_TAC_CAP = 3;
 const siegeBehind = (i        ) => (i < 4 ? i + 4 : i < 8 ? 8 : -1);
 const siegeIncomeOf = (z       ) => (z.st !== "held" ? 0 : z.kind === "castle" ? ST.castleInc : ST.zoneInc);
 const siegeIncome = (s       ) => ST.base + s.zones.reduce((x, z) => x + siegeIncomeOf(z), 0);
-const siegePrice = (id        ) => Math.max(1, CARD[id].cost) + ST.priceAdd; // market mark-up: siege prices run high
+const siegePrice = (id        ) => Math.ceil(Math.max(1, CARD[id].cost) * ST.priceMul) + ST.priceAdd; // war-time mark-up: siege prices run high
 const siegeBuyback = (id        ) => Math.max(1, Math.ceil(siegePrice(id) / 2));
 const isBoss = (day        ) => day % 3 === 0;
 function siegeReachable(s       , i        )          {
@@ -702,13 +708,13 @@ function waveFight(s       , zone        , kind                 , carry        ,
   const units = pool.filter((id) => CARD[id].kind === "unit" && CARD[id].cost <= 1 + Math.ceil(d / 2));
   const vanN = Math.min(5, ST.vanBase + Math.floor(d / ST.vanDiv) + (atk === "ambush" ? ST.ambVan : 0)) - carry.length;
   const buff = Math.floor((d - 1) / ST.buffDiv);
-  const van         = carry.map((u) => ({ ...u, ready: false, stun: 0 }));
-  for (const id of pickN(units, Math.max(0, vanN))) van.push(waveUnit(s, id, buff));
+  const van         = carry.map((u) => { const c = { ...u, ready: false, stun: 0 }; delete c.ent; return c; });
+  for (const id of pickN(units, Math.max(0, vanN))) { const u = waveUnit(s, id, buff); u.ent = true; van.push(u); }
   let bossId                    ;
   if (boss) {
     const bp = COLLECTION.filter((c) => c.kind === "unit" && (rarityOf(c) === "epic" || rarityOf(c) === "legendary") && !c.trib);
     const b = bp[Math.floor(Math.random() * bp.length)]; bossId = b.id;
-    const u = waveUnit(s, b.id, Math.round(d * ST.bossHp)); u.atk += Math.floor(d / ST.bossAtkDiv); if (d >= 12) u.guard = true; van.unshift(u);
+    const u = waveUnit(s, b.id, Math.round(d * ST.bossHp)); u.atk += Math.floor(d / ST.bossAtkDiv); if (d >= 12) u.guard = true; u.ent = true; van.unshift(u);
   }
   const deck = pickN(pool.filter((id) => CARD[id].cost <= ST.dcBase + Math.ceil(d / ST.dcDiv)), Math.max(0, ST.deckBase + Math.ceil(d / ST.deckDiv)));
   return { zone, kind, van: van.slice(0, BOARD_MAX), deck, hp: 0, ramp: Math.min(5, Math.floor(d / ST.rampDiv)), boss: bossId, name: boss ? `${CARD[bossId ].name}'s host` : kind === "push" ? "Breach column" : atk === "ambush" ? `Ambushers` : `Wave ${d}`, cmd: 0, ...(atk ? { atk } : {}) };
@@ -719,7 +725,7 @@ function siegeNight(s       ) {
   // 1) enemies holding a zone since last night: retake or lose it
   for (const z of s.zones) if (z.st === "contested") {
     const deck = pickN(WAVE_POOL().filter((id) => CARD[id].cost <= ST.dcBase + Math.ceil(d / ST.dcDiv)), Math.max(0, ST.rtBase + Math.floor(d / 3)));
-    s.fights.push({ zone: z.i, kind: "retake", van: z.foe.map((u) => ({ ...u, ready: false, stun: 0 })), deck, hp: 0, ramp: Math.min(5, Math.floor(d / ST.rampDiv)), name: "Occupiers", cmd: 0 });
+    s.fights.push({ zone: z.i, kind: "retake", van: z.foe.map((u) => { const c = { ...u, ready: false, stun: 0 }; delete c.ent; return c; }), deck, hp: 0, ramp: Math.min(5, Math.floor(d / ST.rampDiv)), name: "Occupiers", cmd: 0 });
   }
   // 2) breach columns pushing into the zone behind a destroyed one
   const pushT = new Set        ();
@@ -746,8 +752,17 @@ function siegeGame(s       , f        )    {
   g.a.board = z.units.map((c) => { const u = waveUnit(g, c.id); u.sid = c.sid; return u; });
   g.b.board = f.van.map((u) => ({ ...u, uid: g.uid++, ready: false }));
   g.log = [`${f.atk === "ambush" ? "Ambush! " : ""}${f.name} attacks ${z.name}! Hold the walls (♥ ${szWalls(z.kind)}) and defeat every unit in the wave.`];
+  siegeMuster(g, f.kind !== "retake");
   startTurn(g, "b");
   return g;
+}
+// Battle start: Hire effects fire for everyone who takes the field. The garrison goes first, in posting order
+// (both armies are already on the field, so a defender's Hollow Queen or Crossbow can hit the wave), then the wave's
+// fresh units in the order they arrive (boss first). Occupiers and breach columns already entered on an earlier night.
+function siegeMuster(g   , waveFx         ) {
+  for (const u of g.a.board.slice()) if (u.hp > 0 && g.a.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${CARD[u.id].name} takes the walls: Hire effect`); enterFx(g, "a", u, g.a.board.filter((x) => x !== u && x.hp > 0)); }
+  for (const u of g.b.board.slice()) { const fresh = !!u.ent; delete u.ent; if (waveFx && fresh && u.hp > 0 && g.b.board.includes(u) && HIRE_FX.has(u.id)) { push(g, `${CARD[u.id].name} charges in: Hire effect`); enterFx(g, "b", u, g.b.board.filter((x) => x !== u && x.hp > 0)); } }
+  cleanup(g);
 }
 // Move to the next fight; fights with nobody defending resolve on their own.
 function siegeNext(s       ) {
@@ -776,7 +791,7 @@ function siegeResolve(s       , f        , won         , foeLeft        , aliveS
     return;
   }
   s.stats.lost++;
-  const occ = foeLeft.filter((u) => u.hp > 0).slice(0, BOARD_MAX).map((u) => ({ ...u, ready: false, stun: 0 }));
+  const occ = foeLeft.filter((u) => u.hp > 0).slice(0, BOARD_MAX).map((u) => { const c = { ...u, ready: false, stun: 0 }; delete c.ent; return c; });
   if (z.kind === "castle") { z.st = "lost"; s.phase = "lost"; s.report.push(`The castle has fallen on night ${s.day}.`); slog(s, `The castle has fallen. The city is lost.`); return; }
   if (f.kind === "retake" || z.st === "contested") {
     z.st = "lost"; s.stats.zones++;
@@ -838,4 +853,4 @@ function siegeAiStep(s       , who        )       {
 }
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
