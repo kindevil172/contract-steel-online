@@ -5,7 +5,7 @@
                                                                       
                                                        
                                                                                                                                                                                                                                                                                                                                                                  
-                                                                                                                                                                                                               
+                                                                                                                                                                                                                            
                                                                                                                                                                                                                                   
                                                                                                                                                                                                                                                                                                                                                                                                      
                                                    
@@ -60,6 +60,9 @@ const CARDS            = [
   { id: "buyout", name: "Hostile Buyout", cost: 4, kind: "spell", fac: "gilded", target: "enemyUnit", isNew: true, text: "Take control of an enemy sellsword with 3 or less attack.", flavor: "Loyalty has a price. Pay it." },
   { id: "selene", name: "Selene Goldhand", cost: 5, kind: "unit", atk: 3, hp: 5, fac: "gilded", drain: true, legend: true, isNew: true, text: "Hire: draw 2 cards.", flavor: "Audits kingdoms. Collects in blood." },
   { id: "shade", name: "Hidden sellsword", cost: 0, kind: "unit", atk: 0, hp: 1, fac: "shadow", hidden: true, token: true, text: "Face down. Only its owner knows what it is, until it attacks.", flavor: "Something waits in the dark." },
+  { id: "wallguard", name: "Guard of the Wall", cost: 3, kind: "unit", atk: 1, hp: 2, fac: "iron", isNew: true, text: "Hire: create a 0/4 Wall. Has +2 attack while you control a Wall.", flavor: "He was hired to guard the wall. He brought his own." },
+  { id: "wallmage", name: "Iron Mage Apprentice", cost: 4, kind: "unit", atk: 1, hp: 2, fac: "iron", isNew: true, text: "Hire: create a 0/4 Wall, then give all your Walls +1/+1.", flavor: "First lesson: stone. Second lesson: more stone." },
+  { id: "wall", name: "Wall", cost: 0, kind: "unit", atk: 0, hp: 4, fac: "iron", guard: true, token: true, text: "Can't attack.", flavor: "Stone doesn't ask for wages." },
   { id: "grunt", name: "Goblin Grunt", cost: 1, kind: "unit", atk: 1, hp: 1, fac: "horde", token: true, flavor: "Cheap. Plentiful. Mostly brave." },
   { id: "rabble", name: "Goblin Rabble", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "horde", isNew: true, text: "Hire: summon a 1/1 Goblin Grunt.", flavor: "Paid per head. Many heads." },
   { id: "kobold", name: "Kobold Tunneler", cost: 1, kind: "unit", atk: 2, hp: 1, fac: "horde", isNew: true, text: "Last Pay: 1 damage to the enemy captain.", flavor: "Digs in, blows up, bills you." },
@@ -127,7 +130,7 @@ const RARITY                         = {
   assassin: "common", veteran: "common", axe: "common", quartermaster: "common", ambush: "common", healer: "common", contracts: "common",
   blade: "common", drummer: "common", berserker: "common", raider: "common", crossbow: "common", sergeant: "common", shieldwall: "common",
   infiltrator: "common", knife: "common", moneylender: "common", rabble: "common", kobold: "common", bomber: "common", worg: "common",
-  bloodtusk: "common", warcall: "common", bonus: "common", debt: "common", grunt: "common",
+  bloodtusk: "common", warcall: "common", bonus: "common", debt: "common", grunt: "common", wallguard: "common", wallmage: "common", wall: "common",
   skirmisher: "common", charge: "common", squire: "common", holdline: "common", cutthroat: "common", dart: "common", clerk: "common",
   taxman: "common", looter: "common", brute: "common", ambusher: "common", bodyguard: "common", sentry: "common", bloodblade: "common",
   headtaker: "rare", reaver: "rare", ballista: "rare", juggernaut: "rare", stalker: "rare", marked: "rare", paladin: "rare",
@@ -214,6 +217,18 @@ function payTribute(g   , s      , uid        , pay         ) {
   } else { p.hp -= u.atk; push(g, `Unfed, ${nm2} mauled ${p.name} for ${u.atk}`); }
 }
 function heal(p        , n        ) { p.hp = Math.min(p.maxHp, p.hp + n); }
+// Walls (Iron Company tokens): 0/4 Guard, can't attack. No Wall is created on a full board.
+function summonWall(g   , s      ) { const p = g[s]; if (p.board.length < BOARD_MAX) p.board.push({ uid: g.uid++, id: "wall", atk: 0, hp: 4, maxHp: 4, ready: false, guard: true, hidden: false }); }
+// Standing effects, re-checked after every move: Walls never ready; Guard of the Wall has +2 attack while its side controls a Wall.
+function wallAura(g   ) {
+  for (const s of ["a", "b"]          ) {
+    const has = g[s].board.some((u) => u.id === "wall" && u.hp > 0);
+    for (const u of g[s].board) {
+      if (u.id === "wall") u.ready = false;
+      if (u.id === "wallguard") { const want = has ? 2 : 0, d = want - (u.wb || 0); if (d) { u.atk += d; u.wb = want; } }
+    }
+  }
+}
 function summon(g   , s      , n        ) { const p = g[s]; for (let i = 0; i < n && p.board.length < BOARD_MAX; i++) p.board.push({ uid: g.uid++, id: "grunt", atk: 1, hp: 1, maxHp: 1, ready: false, guard: false, hidden: false }); }
 function checkWin(g   ) {
   if (g.winner) return; if (g.b.hp <= 0) g.winner = "a"; else if (g.a.hp <= 0) g.winner = "b";
@@ -326,6 +341,7 @@ function cleanup(g   ) {
     }
     if (!any) break;
   }
+  wallAura(g);
   checkWin(g);
 }
 function canPlay(g   , s      , idx        )          {
@@ -345,7 +361,7 @@ function canPlay(g   , s      , idx        )          {
 // Hire effects of a unit entering the field (normal play, or a siege garrison / wave taking the field at battle start).
 // Optional pricier hire (the hire-choice overlay): cost in gold. Siege garrisons always use the normal version.
 const ALT_HIRE                         = { bodyguard: 4, golem: 7 };
-const HIRE_FX = new Set(["ballista", "battlemage", "clerk", "crossbow", "dorn", "drummer", "gorger", "graci", "headtaker", "hollowqueen", "legion", "medic", "priest", "quartermaster", "rabble", "selene", "sergeant", "shaman", "spymaster", "warboss", "warchief", "warlord", "worg", "zack"]);
+const HIRE_FX = new Set(["wallguard", "wallmage", "ballista", "battlemage", "clerk", "crossbow", "dorn", "drummer", "gorger", "graci", "headtaker", "hollowqueen", "legion", "medic", "priest", "quartermaster", "rabble", "selene", "sergeant", "shaman", "spymaster", "warboss", "warchief", "warlord", "worg", "zack"]);
 function enterFx(g   , s      , nu      , others        , tg         ) {
   const p = g[s], e = g[other(s)], c = CARD[nu.id];
       if (c.id === "medic") heal(p, 3);
@@ -365,6 +381,8 @@ function enterFx(g   , s      , nu      , others        , tg         ) {
       if (c.id === "headtaker") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => x.hp - y.hp)[0]; if (w) w.hp -= 2; }
       if (c.id === "ballista") { const w = e.board.filter((u) => !u.hidden).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (w) w.hp -= 3; }
       if (c.id === "clerk") p.gold += 1;
+      if (c.id === "wallguard") summonWall(g, s);
+      if (c.id === "wallmage") { summonWall(g, s); for (const u of p.board) if (u.id === "wall") { u.atk++; u.hp++; u.maxHp++; } }
       if (c.id === "graci") { heal(p, 5); for (const u of p.board) u.hp = Math.min(u.maxHp, u.hp + 2); draw(g, s); }
       if (c.id === "zack") { const t = others.filter((u) => !isDeadly(u)).sort((x, y) => y.atk - x.atk || y.hp - x.hp)[0]; if (t) { t.deadly = true; push(g, `${unitName(t, true)} gained Deadly`); } }
       if (c.id === "warchief") { summon(g, s, 1); for (const u of p.board) if (u.id === "grunt") { u.atk++; u.hp++; u.maxHp++; } }
@@ -443,7 +461,7 @@ function apply(g0   , a        )    {
   }
   if (a.t === "attack") {
     const u = p.board.find((x) => x.uid === a.uid);
-    if (!u || !u.ready || u.stun || !canAttackTarget(g, s, a.target)) return g0;
+    if (!u || !u.ready || u.stun || u.id === "wall" || !canAttackTarget(g, s, a.target)) return g0;
     const wasHidden = u.hidden; u.ready = false; u.hidden = false;
     const uc = CARD[u.id];
     if (a.target.uid === "hero") {
@@ -495,7 +513,7 @@ function aiAction(g   )         {
   const s = g.turn, o = other(s), p = g[s], e = g[o];
   const heroOk = !(g.siege && o === "b"); // siege waves have no captain to hit
   if (p.due && p.due.length) { const u = p.board.find((x) => x.uid === p.due [0]); return { t: "trib", uid: p.due[0], pay: !!u && tribWise(g, s, u) }; }
-  const ready = p.board.filter((u) => u.ready && !u.stun);
+  const ready = p.board.filter((u) => u.ready && !u.stun && u.id !== "wall");
   const vis = e.board.filter((u) => !u.hidden);
   const order = p.hand.map((id, idx) => ({ idx, c: CARD[id] })).sort((x, y) => y.c.cost - x.c.cost);
   for (const { idx, c } of order) {
@@ -507,6 +525,7 @@ function aiAction(g   )         {
       if (c.trib && c.trib.k === "gold" && goldDue(p) + c.trib.n > Math.min(MAX_GOLD, p.maxGold + 1)) continue;
       if (c.id === "zack" && !p.board.some((u) => !isDeadly(u)) && p.hand.length > 2) continue;
       if (c.id === "shaman" && p.board.length < 2 && p.hand.length > 2) continue;
+      if ((c.id === "wallguard" || c.id === "wallmage") && p.board.length >= BOARD_MAX - 1 && !(c.id === "wallmage" && p.board.some((u) => u.id === "wall")) && p.hand.length > 2) continue; // no room for the Wall
       if (c.id === "golem" && p.gold >= 7) { const blocks = p.hand.some((h, j) => j !== idx && CARD[h].cost <= p.gold - 5 && CARD[h].cost > p.gold - 7 && canPlay(g, s, j)); return { t: "play", idx, alt: !blocks }; }
       if (c.id === "battlemage") {
         const kill = vis.filter((u) => u.hp > 0 && u.hp <= 3).sort((x, y) => value(y) - value(x))[0];
@@ -528,7 +547,7 @@ function aiAction(g   )         {
     if (c.id === "warcall" && p.board.length <= 4) return { t: "play", idx };
     if (c.id === "bloodfeast" && p.hand.length <= 5) { const v = p.board.filter((u) => u.id === "grunt" || u.id === "kobold" || u.id === "bomber" || u.hp <= 1).sort((x, y) => value(x) - value(y))[0]; if (v) return { t: "play", idx, target: { side: s, uid: v.uid } }; }
     if (c.id === "firebomb") { const net = e.board.filter((u) => u.hp <= 2).reduce((x, u) => x + value(u), 0) - p.board.filter((u) => u.hp <= 2).reduce((x, u) => x + value(u), 0); if (net >= 5) return { t: "play", idx }; }
-    if (c.id === "charge") { const t = p.board.filter((u) => !u.ready).sort((x, y) => y.atk - x.atk)[0]; if (t) return { t: "play", idx, target: { side: s, uid: t.uid } }; }
+    if (c.id === "charge") { const t = p.board.filter((u) => !u.ready && u.id !== "wall").sort((x, y) => y.atk - x.atk)[0]; if (t) return { t: "play", idx, target: { side: s, uid: t.uid } }; }
     if (c.id === "holdline" && e.board.length) { const t = p.board.slice().sort((x, y) => (x.guard ? 1 : 0) - (y.guard ? 1 : 0) || value(y) - value(x))[0]; return { t: "play", idx, target: { side: s, uid: t.uid } }; }
     if (c.id === "volley") { const net = e.board.filter((u) => u.hp <= 2).reduce((x, u) => x + value(u), 0); if (net >= 4 || e.board.length >= 3) return { t: "play", idx }; }
     if (c.id === "madcurse") { const t = vis.slice().sort((x, y) => (y.guard ? 2 : 0) + value(y) - (x.guard ? 2 : 0) - value(x))[0]; if (t && value(t) >= 6) return { t: "play", idx, target: { side: o, uid: t.uid } }; }
@@ -883,4 +902,4 @@ function siegeAiStep(s       , who        )       {
 }
 
 
-export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, unitName, shadeUnit, viewFor, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, ALT_HIRE, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
+export { MAX_GOLD, CARDS, CARD, RARITY, rarityOf, RARITY_NAME, RARITY_LETTER, COLLECTION, shuffle, other, push, unitName, shadeUnit, viewFor, draw, RAGE_HEAL, RAGE, isDeadly, tribText, tribPay, canTribute, FED_VALUE, rampTarget, payTribute, heal, summonWall, wallAura, summon, checkWin, startTurn, OPEN_HAND, mulligan, chooseFirst, aiMulligan, newGame, clone, stunUnit, hasGuard, canAttackTarget, spellTargetOk, dmgTarget, cleanup, canPlay, ALT_HIRE, HIRE_FX, enterFx, apply, value, tribWise, goldDue, aiAction, ex, PREMADE, PREMADE_BLURB, copyLimit, deckProblems, countOf, SIEGE_DAYS, ST, SIEGE_START_GOLD, SZ_NAMES, szWalls, szCap, SZ_TAC_CAP, siegeBehind, siegeIncomeOf, siegeIncome, siegePrice, siegeBuyback, isBoss, siegeReachable, SHOP_POOL, siegeShopRoll, siegeRerollIn, siegeCounts, siegePlan, SIEGE_START_UNITS, newSiege, slog, sClone, findCard, pname, siegeDo, WAVE_POOL, pickN, waveUnit, waveFight, siegeNight, SIEGE_FOE_HP, siegeGame, siegeMuster, siegeNext, siegeResolve, siegeFinish, siegeDawn, unitScore, siegeThreat, siegeAiStep };
